@@ -122,7 +122,7 @@ def getMessage():
 @server.route("/")
 def webhook():
 	bot.remove_webhook()
-	bot.set_webhook(url=URL+"/webhook") # эurl нужно заменить на url вашего Хероку приложения
+	bot.set_webhook(url=URL) # эurl нужно заменить на url вашего Хероку приложения
 	return "?", 200
 
 server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
