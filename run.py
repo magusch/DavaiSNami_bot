@@ -60,16 +60,16 @@ def take_post_fromChannel(message):
 			bot.send_message(id_admin, 'Ошибка')
 
 
-bot.polling()
+#bot.polling()
 
-# @server.route("/webhook", methods=['POST'])
-# def getMessage():
-# 	bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
-# 	return "!", 200
-# @server.route("/")
-# def webhook():
-# 	bot.remove_webhook()
-# 	bot.set_webhook(url=URL+"/webhook") # эurl нужно заменить на url вашего Хероку приложения
-# 	return "?", 200
+@server.route("/webhook", methods=['POST'])
+def getMessage():
+	bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
+	return "!", 200
+@server.route("/")
+def webhook():
+	bot.remove_webhook()
+	bot.set_webhook(url=URL+"/webhook") # эurl нужно заменить на url вашего Хероку приложения
+	return "?", 200
 
-# server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
+server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
