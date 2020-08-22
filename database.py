@@ -23,11 +23,11 @@ TAGS_EVENTS = ["id", "title", "post_id"]
 TABLENAME_EVENTS = "events"
 
 
-def get_db_cursor():
-	return psycopg2.connect(DATABASE_URL, sslmode='require').cursor()
+def get_db_connection():
+	return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def _get(script):
-	db_cursor = get_db_cursor()
+	db_cursor = get_db_connection().cursor()
 	db_cursor.execute(script)
 	values = db_cursor.fetchall()
 	db_cursor.close()
@@ -42,14 +42,14 @@ def _insert(script, data):
 	    script : str
 	        executing script
 	    """
-	db_cursor = get_db_cursor()
+	db_connection = get_db_connection()
+	db_cursor = db_connection.cursor()
 
 	db_cursor.execute(script, data)
 	db_connection.commit()
+
 	db_connection.close()
 	db_cursor.close()
-
-
 
 
 def date_from_mess(mess):
@@ -92,8 +92,8 @@ def event_by_date(dt):
     return events
 
 def save_exibition(exib):
-	script = "INSERT INTO exhibitions (post_id, title, date_before) VALUES (%s, %s, cast('%s' as TIMESTAMP))"
-	data = [event['post_id'], event['title'], event['date_before']]
+	script = "INSERT INTO exhibitions (post_id, title, date_before) VALUES (%s, %s, cast(%s as TIMESTAMP))"
+	data = [exib['post_id'], exib['title'], exib['date_before']]
 	_insert(script, data)
 
 

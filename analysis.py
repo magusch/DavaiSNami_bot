@@ -60,15 +60,15 @@ def what_message(message_from_user):
 	return (answer, bad)
 
 
-def exibit_analys(post):
+def exibit_analys(post, message_id):
 	year = (datetime.utcnow()+timedelta(hours=3)).year
 
 	title_line = post[:post.find('\n')].strip('\u200b')
 	title_list = title_line.split(' ')
 
 	exib=dict()
-	exib['date_before'] = datetime(day = int(title_list[1]), month = monthes.index(title_list[2])+1, year=year) 
+	exib['date_before'] = datetime(day = int(title_list[1]), month = month_int2name.index(title_list[2][:3].lower())+1, year=year) 
 	exib['title'] = ' '.join(title_list[3:])
-	exib['post_id'] = message.message_id
+	exib['post_id'] = message_id
 			
 	save_exibition(exib)

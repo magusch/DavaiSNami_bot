@@ -53,23 +53,26 @@ def take_post_fromChannel(message):
 		post=message.text
 	else:
 		post=message.caption
-	if post[:2]=='До':
-		try: 
-			exibit_analys(post)			
+	if post[:2]=='До': 
+		try:
+			exibit_analys(post, message.message_id)			
 		except:
-			bot.send_message(id_admin, 'Ошибка')
+		 	bot.send_message(id_admin, 'Ошибка')
 
 
-#bot.polling()
 
-@server.route("/webhook", methods=['POST'])
-def getMessage():
-	bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
-	return "!", 200
-@server.route("/")
-def webhook():
-	bot.remove_webhook()
-	bot.set_webhook(url=URL+"/webhook") # эurl нужно заменить на url вашего Хероку приложения
-	return "?", 200
+try:
+	@server.route("/webhook", methods=['POST'])
+	def getMessage():
+		bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
+		return "!", 200
+	@server.route("/")
+	def webhook():
+		bot.remove_webhook()
+		bot.set_webhook(url=URL+"/webhook") # эurl нужно заменить на url вашего Хероку приложения
+		return "?", 200
 
-server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
+	server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
+except:
+	bot.send_message(id_admin, 'Polling')
+	bot.polling()
