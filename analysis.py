@@ -7,30 +7,29 @@ date_menu=['сегодня', 'завтра', 'выходные', 'выставк
 
 month_int2name=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт", "ноя", "дек"]
 
-def get_day(when):
+def get_day(when, daynow):
 	if when==5 or when==6:
-		weekday = datetime.now().weekday()
+		weekday = daynow.weekday()
 		when = when - weekday
-	day_events = datetime.now()+timedelta(days=when)
+	day_events = daynow + timedelta(days=when)
 	return day_events
-
 
 
 def what_message(message_from_user):
 	daynow = datetime.utcnow()+timedelta(hours=3)
 	bad = 0
 	if message_from_user==date_menu[0]:
-		date_with_events = get_day(0)
+		date_with_events = get_day(0, daynow)
 		answer=get_message_with_events(date_with_events)
 
 	elif message_from_user==date_menu[1]:
-		date_with_events=get_day(1)
+		date_with_events=get_day(1, daynow)
 		answer=get_message_with_events(date_with_events)
 
 	elif message_from_user==date_menu[2]:
-		date_with_events = get_day(5)
+		date_with_events = get_day(5, daynow)
 		answer = get_message_with_events(date_with_events)
-		date_with_events = get_day(6)
+		date_with_events = get_day(6, daynow)
 		answer += f"\n{get_message_with_events(date_with_events)}"
 
 	elif message_from_user==date_menu[3]:
