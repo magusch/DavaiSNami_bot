@@ -1,11 +1,14 @@
 import re
 from datetime import datetime, timedelta
 
-from database import get_message_with_events, find_exibitions, save_exibition
+from database import get_message_with_events, find_exibitions, save_exibition, save_event
 
 date_menu=['сегодня', 'завтра', 'выходные', 'выставки']
 
-month_int2name=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт", "ноя", "дек"]
+monthes = ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
+month_int2name = [month[:3] for month in monthes]
+year = (datetime.utcnow()+timedelta(hours=3)).year
+
 
 def get_day(when, daynow):
 	if when==5 or when==6:
@@ -58,12 +61,13 @@ def what_message(message_from_user):
 
 	return (answer, bad)
 
+def get_title_list(post):
+	title=post[:post.find('\n')].strip('\u200b')
+	return title.split(' ')
+
 
 def exibit_analys(post, message_id):
-	year = (datetime.utcnow()+timedelta(hours=3)).year
-
-	title_line = post[:post.find('\n')].strip('\u200b')
-	title_list = title_line.split(' ')
+	title_list = get_title_list(post)
 
 	exib=dict()
 	exib['date_before'] = datetime(day = int(title_list[1]), month = month_int2name.index(title_list[2][:3].lower())+1, year=year) 
@@ -71,3 +75,39 @@ def exibit_analys(post, message_id):
 	exib['post_id'] = message_id
 			
 	save_exibition(exib)
+
+
+
+
+def save_post(post, post_id):
+	title_list = get_title_list(post)
+
+	index_month = [title_list.index(word) for word in title_list if word.lower() in monthes]
+
+	if len(index_month)==0:
+		return True
+	title = ' '.join(title_list[index_month[-1]+1:])
+
+	# if len(index_month)>1:
+	# 	if title_list[index_month[0]+1]=='и':
+
+	# 	elif title_list[index_month[0]+1]=='-'
+	i_prev_month = 0
+	dates = list()
+	for i_m in index_month:
+		month =  monthes.index(title_list[i_m])+1
+
+		days_str = ' '.join(title_list[i_prev_month:i_m])
+		if re.search(r'[–-]',days_str):
+			days_list = re.split(r'[–-]', days_str)
+			days_list = [*range(int(days_list[0]), int(days_list[1])+1)]
+		else:
+			days_list = re.split(r'[и,]', days_str)
+			days_list = [int(day) for day in days_list]
+
+		for day in days_list:
+			dates.append(datetime(year, month, day))
+
+		i_prev_month = i_m+2
+	
+	save_event(title, post_id, dates)

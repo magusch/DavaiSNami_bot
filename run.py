@@ -4,7 +4,8 @@ from telebot import types
 import os, re
 
 from flask import Flask, request
-from analysis import what_message, exibit_analys
+from analysis import what_message, exibit_analys,save_post
+from database import check_event_in_db
 
 from dotenv import load_dotenv
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -57,7 +58,16 @@ def take_post_fromChannel(message):
 		try:
 			exibit_analys(post, message.message_id)			
 		except:
-		 	bot.send_message(id_admin, 'Ошибка')
+			bot.send_message(id_admin, 'Ошибка')
+	else:
+		try:
+			if not check_event_in_db(message.message_id):
+				if save_post(post, message.message_id):
+					bot.send_message(id_admin, 'Ошибка_post')
+		except Exception as e:
+			bot.send_message(id_admin, 'Ошибка_2')
+			bot.send_message(id_admin, str(e))
+
 
 
 
