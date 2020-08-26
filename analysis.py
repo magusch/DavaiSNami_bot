@@ -93,21 +93,23 @@ def save_post(post, post_id):
 
 	# 	elif title_list[index_month[0]+1]=='-'
 	i_prev_month = 0
-	dates = list()
+	dates_from, dates_to = list(), list()
+	#dates = list()
 	for i_m in index_month:
 		month =  monthes.index(title_list[i_m])+1
 
 		days_str = ' '.join(title_list[i_prev_month:i_m])
 		if re.search(r'[–-]',days_str):
 			days_list = re.split(r'[–-]', days_str)
-			days_list = [*range(int(days_list[0]), int(days_list[1])+1)]
+
+			dates_from.append(datetime(year,month,int(days_list[0])))
+			dates_to.append(datetime(year,month,int(days_list[1])))
 		else:
 			days_list = re.split(r'[и,]', days_str)
-			days_list = [int(day) for day in days_list]
 
-		for day in days_list:
-			dates.append(datetime(year, month, day))
+			dates_from.extend([datetime(year,month,int(day)) for day in days_list])
+			dates_to.extend([datetime(year,month,int(day)) for day in days_list])
 
 		i_prev_month = i_m+2
 	
-	save_event(title, post_id, dates)
+	save_event(title, post_id, dates_from, dates_to)

@@ -85,8 +85,7 @@ def event_by_date(dt):
     script = (
         f"SELECT {', '.join(TAGS_EVENTS)} FROM {TABLENAME_EVENTS} "
         "WHERE post_id IS NOT NULL "
-        "AND EXTRACT(DAY FROM date_from) = %s " 
-        "AND EXTRACT(MONTH FROM date_from) = %s " %(dt.day, dt.month)
+        "AND date_from::date <= '%s'::date AND date_to::date >= '%s'::date" % (dt,dt)
     )
 
     events = list()
@@ -108,7 +107,7 @@ def find_exibitions(date_today):
 	#dateRequest, monthRequest=date_from_mess(mess)
 	#monthRequest=monthes.index(monthRequest)+1
 	script = "SELECT title, post_id FROM exhibitions \
-	WHERE date_before>=cast('%s' as TIMESTAMP)" %(date_today)
+	WHERE date_before >= cast('%s' as DATE)" %(date_today)
 
 	message='*Выставки:*\n\n'
 	for exib in _get(script):
@@ -117,13 +116,13 @@ def find_exibitions(date_today):
 	return message
 
 
-def save_event(title, post_id, dates):
+def save_event(title, post_id, dates_from, dates_to):
 	#Delete FROM events WHERE id>410003 AND id<499995;
 	script = ''
-	for date in dates:
-		script += f"INSERT INTO events (id, title, post_id, date_from, url) \
+	for i in range(len(dates_from)):
+		script += f"INSERT INTO events (id, title, post_id, date_from, date_to, url) \
 			VALUES  (4{randint(1000,9999)}4, '{title}', {post_id},\
-				cast('{date}' as TIMESTAMP), '{url}{post_id}'); "
+				cast('{dates_from[i]}' as TIMESTAMP), cast('{dates_to[i]}' as TIMESTAMP), '{url}{post_id}'); "
 	_insert(script)
 	
 
