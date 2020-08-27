@@ -1,11 +1,11 @@
 import telebot
 from telebot import types
 
-import os, re
-from datetime import datetime 
+import os, time
+
 from flask import Flask, request
-from database import get_message_with_events, save_exibition, find_exibitions
-from analysis import get_day
+from analysis import what_message, exibit_analys,save_post
+from database import check_event_in_db
 
 from dotenv import load_dotenv
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -18,75 +18,38 @@ token= os.environ['token']
 
 URL = os.environ['URL']
 #PORT = int(os.environ.get('PORT'))
-id_admin=os.environ['id_admin']
-
+id_admin = os.environ['id_admin']
+id_channel = os.environ['id_channel']
 
 bot = telebot.TeleBot(token)
 
-
 server = Flask(__name__)
 
-#month_int2name=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября", "ноября", "декабря"]
-month_int2name=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт", "ноя", "дек"]
-
 markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-date_menu=['сегодня', 'завтра', 'выходные', 'выставки']
+date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт' , 'выставки']
 markup.add(types.KeyboardButton(date_menu[0].capitalize()), types.KeyboardButton(date_menu[1].capitalize()))
-markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()))
+markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()), types.KeyboardButton(date_menu[4].capitalize()))
 
 
 
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-	bot.reply_to(message, "Привет! Это бот канала @DavaiSNami. Здесь можно получить краткий гид о мероприятиях на определённый день. Вся информация берётся с канала! \n Просто напишите дату в формате «31 декабря», «31.12» или «Сегодня» («Завтра», «Выходные»).", reply_markup=markup)
+	bot.reply_to(message, "Привет! Это бот канала @DavaiSNami. С моей помощью можно получить краткий гид мероприятий на определённый день, на выходные или по проходящим выставкам в Петербурге. \n\n Чтобы начать укажите дату в формате: *«31 декабря»*, *«31.12»*, *«31»* или фразу: *«Сегодня»*, *«Завтра»*, *«Выходные»*.", parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(content_types=['text', 'photo'])
 def send_text(message):
-	#bot.send_message(message.chat.id, 'Одну секунду')
-	message_from_user = message.text.lower()
-	daynow = datetime.now()
 
-	if message_from_user==date_menu[0]:
-		date_with_events = get_day(0)
-		messg=get_message_with_events(date_with_events)
+	answer, code = what_message(message.text.lower())
 
-	elif message_from_user==date_menu[1]:
-		date_with_events=get_day(1)
-		messg=get_message_with_events(date_with_events)
-
-	elif message_from_user==date_menu[2]:
-		date_with_events = get_day(6)
-		messg = get_message_with_events(date_with_events)
-		date_with_events = get_day(7)
-		messg=messg+'\n'+get_message_with_events(date_with_events)
-
-	elif message_from_user==date_menu[3]:
-		messg=find_exibitions(daynow)
-
-	else:
-		mq=re.split(r'[:,./ ]',message_from_user)
-		try:
-			day = int(mq[0])
-			if len(mq)<2:
-				month = daynow.month
-				if day < daynow.day: month+=1
-			elif re.search(r'[\d+]', mq[1]): #TODO: check month value
-				month = int(mq[1])
-			elif mq[1][:3] in month_int2name:
-				month = month_int2name.index(mq[1][:3])+1			
-			else:
-				month = daynow.month
-				if day < daynow.day: month+=1
-
-			date_with_events = datetime(day=day, month=month, year=daynow.year)
-			messg=get_message_with_events(date_with_events)
-		except:
-			bad_message = message_from_user+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
-			bot.send_message(id_admin, bad_message)
-			messg='Некорректная дата'
-	bot.send_message(message.chat.id, messg, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-	
+	if code == 0:
+		bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)	
+	elif code == 2:
+		bot.forward_message(message.chat.id, id_channel, int(answer))
+	elif code == 1:
+		bot.reply_to(message, answer, reply_markup=markup)
+		bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
+		bot.send_message(id_admin, bad_message) 
 
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
@@ -95,34 +58,38 @@ def take_post_fromChannel(message):
 		post=message.text
 	else:
 		post=message.caption
-	if post[:2]=='До':
-		daynow = datetime.now()
-		exib=dict()
-
+	if post[:2]=='До': 
 		try:
-			title_line = post[:post.find('\n')].strip('\u200b')
-			title_list = title_line.split(' ')
-
-			exib['date_before'] = datetime(day = int(title_list[1]), month = monthes.index(title_list[2])+1, year=daynow.year) 
-			exib['title'] = ' '.join(title_list[3:])
-			exib['post_id'] = message.message_id
-			
-			save_exibition(exib)
-			#exbns="%s: http://davaisnami.magusch.ru/?post=%s"%(title,str(message.message_id))
+			exibit_analys(post, message.message_id)			
 		except:
 			bot.send_message(id_admin, 'Ошибка')
+	else:
+		time.sleep(30)
+		try:
+			if not check_event_in_db(message.message_id):
+				if save_post(post, message.message_id):
+					bot.send_message(id_admin, 'Ошибка_post')
+			else:
+				bot.send_message(id_admin, 'Пост существует)')
+		except Exception as e:
+			bot.send_message(id_admin, 'Ошибка_2')
+			bot.send_message(id_admin, str(e))
 
 
-#bot.polling()
 
-@server.route("/webhook", methods=['POST'])
-def getMessage():
-	bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
-	return "!", 200
-@server.route("/")
-def webhook():
-	bot.remove_webhook()
-	bot.set_webhook(url=URL) # эurl нужно заменить на url вашего Хероку приложения
-	return "?", 200
 
-server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
+try:
+	@server.route("/webhook", methods=['POST'])
+	def getMessage():
+		bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
+		return "!", 200
+	@server.route("/")
+	def webhook():
+		bot.remove_webhook()
+		bot.set_webhook(url=URL+"/webhook") 
+		return "?", 200
+
+	server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))
+except:
+	bot.send_message(id_admin, 'Polling')
+	bot.polling()
