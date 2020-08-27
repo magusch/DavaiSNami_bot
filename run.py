@@ -1,7 +1,7 @@
 import telebot
 from telebot import types
 
-import os, re
+import os, time
 
 from flask import Flask, request
 from analysis import what_message, exibit_analys,save_post
@@ -35,7 +35,7 @@ markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-	bot.reply_to(message, "Привет! Это бот канала @DavaiSNami. Здесь можно получить краткий гид о мероприятиях на определённый день. Вся информация берётся с канала! \n Просто напишите дату в формате «31 декабря», «31.12» или «Сегодня» («Завтра», «Выходные»).", reply_markup=markup)
+	bot.reply_to(message, "Привет! Это бот канала @DavaiSNami. С моей помощью можно получить краткий гид мероприятий на определённый день, на выходные или по проходящим выставкам в Петербурге. \n\n Чтобы начать укажите дату в формате: *«31 декабря»*, *«31.12»*, *«31»* или фразу: *«Сегодня»*, *«Завтра»*, *«Выходные»*.", parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(content_types=['text', 'photo'])
 def send_text(message):
@@ -60,10 +60,13 @@ def take_post_fromChannel(message):
 		except:
 			bot.send_message(id_admin, 'Ошибка')
 	else:
+		time.sleep(30)
 		try:
 			if not check_event_in_db(message.message_id):
 				if save_post(post, message.message_id):
 					bot.send_message(id_admin, 'Ошибка_post')
+			else:
+				bot.send_message(id_admin, 'Пост существует)')
 		except Exception as e:
 			bot.send_message(id_admin, 'Ошибка_2')
 			bot.send_message(id_admin, str(e))
@@ -79,7 +82,7 @@ try:
 	@server.route("/")
 	def webhook():
 		bot.remove_webhook()
-		bot.set_webhook(url=URL+"/webhook") # эurl нужно заменить на url вашего Хероку приложения
+		bot.set_webhook(url=URL+"/webhook") 
 		return "?", 200
 
 	server.run(host="0.0.0.0", port=os.environ.get('PORT', 80))

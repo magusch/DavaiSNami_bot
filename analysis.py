@@ -57,9 +57,10 @@ def what_message(message_from_user):
 			answer=get_message_with_events(date_with_events)
 		except:
 			bad = 1
-			answer='Некорректная дата'
+			answer='Укажите дату, подробности: /help'
 
 	return (answer, bad)
+
 
 def get_title_list(post):
 	title=post[:post.find('\n')].strip('\u200b')
@@ -76,9 +77,6 @@ def exibit_analys(post, message_id):
 			
 	save_exibition(exib)
 
-
-
-
 def save_post(post, post_id):
 	title_list = get_title_list(post)
 
@@ -88,13 +86,8 @@ def save_post(post, post_id):
 		return True
 	title = ' '.join(title_list[index_month[-1]+1:])
 
-	# if len(index_month)>1:
-	# 	if title_list[index_month[0]+1]=='и':
-
-	# 	elif title_list[index_month[0]+1]=='-'
 	i_prev_month = 0
 	dates_from, dates_to = list(), list()
-	#dates = list()
 	for i_m in index_month:
 		month =  monthes.index(title_list[i_m])+1
 
@@ -111,5 +104,6 @@ def save_post(post, post_id):
 			dates_to.extend([datetime(year,month,int(day)) for day in days_list])
 
 		i_prev_month = i_m+2
-	
+
 	save_event(title, post_id, dates_from, dates_to)
+
