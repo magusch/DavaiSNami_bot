@@ -1,8 +1,8 @@
 import re, time
 import psycopg2
 
-from random import randint
-#CREATE TABLE posts (title varchar(100), posttext varchar, post_id int);
+import random
+
 #CREATE TABLE exhibitions (post_id INT UNIQUE, title varchar(150), date_before TIMESTAMP);
 
 import os
@@ -66,8 +66,12 @@ def get_message_with_events(dt):
 
 	events = event_by_date(dt)
 
+	if not events:
+		return "Мероприятий ещё не появилось"
+
 	for event in events:
 		message += '[%s](https://t.me/DavaiSNami/%s)\n' %(event['title'], event['post_id'])
+
 
 	return message
 
@@ -121,11 +125,21 @@ def save_event(title, post_id, dates_from, dates_to):
 	script = ''
 	for i in range(len(dates_from)):
 		script += f"INSERT INTO events (id, title, post_id, date_from, date_to, url) \
-			VALUES  (4{randint(1000,9999)}4, '{title}', {post_id},\
+			VALUES  (4{random.randint(1000,9999)}4, '{title}', {post_id},\
 				cast('{dates_from[i]}' as TIMESTAMP), cast('{dates_to[i]}' as TIMESTAMP), '{url}{post_id}'); "
 	_insert(script)
 	
-
+def get_random_event(date):
+	script = (
+        f"SELECT post_id FROM {TABLENAME_EVENTS} "
+        "WHERE post_id IS NOT NULL "
+        f"AND '{date}'::date <= date_from::date "
+        f"AND '{date}'::date + 5 >= date_from::date;"
+    )
+	if _get(script):
+		return (random.choice(_get(script))[0], 2)
+	else:
+		return ('Мероприятий нет', 0)
 
 # def delete(posts_ids):
 # 	with conn.cursor() as cursor:

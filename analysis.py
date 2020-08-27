@@ -1,9 +1,9 @@
 import re
 from datetime import datetime, timedelta
 
-from database import get_message_with_events, find_exibitions, save_exibition, save_event
+from database import get_message_with_events, find_exibitions, save_exibition, save_event, get_random_event
 
-date_menu=['сегодня', 'завтра', 'выходные', 'выставки']
+date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт', 'выставки']
 
 monthes = ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
 month_int2name = [month[:3] for month in monthes]
@@ -20,7 +20,7 @@ def get_day(when, daynow):
 
 def what_message(message_from_user):
 	daynow = datetime.utcnow()+timedelta(hours=3)
-	bad = 0
+	code = 0
 	if message_from_user==date_menu[0]:
 		date_with_events = get_day(0, daynow)
 		answer=get_message_with_events(date_with_events)
@@ -35,8 +35,11 @@ def what_message(message_from_user):
 		date_with_events = get_day(6, daynow)
 		answer += f"\n{get_message_with_events(date_with_events)}"
 
-	elif message_from_user==date_menu[3]:
+	elif message_from_user==date_menu[4]:
 		answer=find_exibitions(daynow)
+
+	elif message_from_user==date_menu[3]:
+		answer, code = get_random_event(daynow)
 
 	else:
 		mq=re.split(r'[:,./ ]',message_from_user)
@@ -56,10 +59,10 @@ def what_message(message_from_user):
 			date_with_events = datetime(day=day, month=month, year=daynow.year)
 			answer=get_message_with_events(date_with_events)
 		except:
-			bad = 1
+			code = 1
 			answer='Укажите дату, подробности: /help'
 
-	return (answer, bad)
+	return (answer, code)
 
 
 def get_title_list(post):

@@ -18,17 +18,17 @@ token= os.environ['token']
 
 URL = os.environ['URL']
 #PORT = int(os.environ.get('PORT'))
-id_admin=os.environ['id_admin']
-
+id_admin = os.environ['id_admin']
+id_channel = os.environ['id_channel']
 
 bot = telebot.TeleBot(token)
 
 server = Flask(__name__)
 
 markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-date_menu=['сегодня', 'завтра', 'выходные', 'выставки']
+date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт' , 'выставки']
 markup.add(types.KeyboardButton(date_menu[0].capitalize()), types.KeyboardButton(date_menu[1].capitalize()))
-markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()))
+markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()), types.KeyboardButton(date_menu[4].capitalize()))
 
 
 
@@ -40,10 +40,14 @@ def send_welcome(message):
 @bot.message_handler(content_types=['text', 'photo'])
 def send_text(message):
 
-	answer, bad_mess = what_message(message.text.lower())
-	bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-	
-	if bad_mess:
+	answer, code = what_message(message.text.lower())
+
+	if code == 0:
+		bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)	
+	elif code == 2:
+		bot.forward_message(message.chat.id, id_channel, int(answer))
+	elif code == 1:
+		bot.reply_to(message, answer, reply_markup=markup)
 		bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
 		bot.send_message(id_admin, bad_message) 
 
