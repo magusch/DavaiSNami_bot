@@ -48,10 +48,10 @@ def send_text(message):
 		bot.forward_message(message.chat.id, id_channel, int(answer))
 	elif code == 1:
 		bot.reply_to(message, answer, reply_markup=markup)
-		bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
-		bot.send_message(id_admin, bad_message) 
-
-	bot.send_message(id_admin, message.text) #delete
+		#bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
+		#bot.send_message(id_admin, bad_message) 
+	msg = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
+	bot.send_message(id_admin, msg) #delete
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
 def take_post_fromChannel(message):
