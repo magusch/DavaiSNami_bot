@@ -51,6 +51,7 @@ def send_text(message):
 		bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
 		bot.send_message(id_admin, bad_message) 
 
+	bot.send_message(id_admin, message.text) #delete
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
 def take_post_fromChannel(message):
