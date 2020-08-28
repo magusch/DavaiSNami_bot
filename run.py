@@ -69,14 +69,12 @@ def take_post_fromChannel(message):
 			if not check_event_in_db(message.message_id):
 				if save_post(post, message.message_id):
 					bot.send_message(id_admin, 'Ошибка_post')
-			else:
-				bot.send_message(id_admin, 'Пост существует)')
 		except Exception as e:
 			bot.send_message(id_admin, 'Ошибка_2')
 			bot.send_message(id_admin, str(e))
 
 
-
+#req = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={URL}/webhook"
 
 try:
 	@server.route("/webhook", methods=['POST'])
