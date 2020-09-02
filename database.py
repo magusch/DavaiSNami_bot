@@ -124,7 +124,7 @@ def save_event(title, post_id, dates_from, dates_to):
 	#Delete FROM events WHERE id>410003 AND id<499995;
 	script = ''
 	for i in range(len(dates_from)):
-		script += f"INSERT INTO events (id, title, post_id, date_from, date_to) \
+		script += f"INSERT INTO events (id, title, post_id, date_from, date_to, url) \
 			VALUES  (4{random.randint(1000,9999)}4, '{title}', {post_id},\
 				cast('{dates_from[i]}' as TIMESTAMP), cast('{dates_to[i]}' as TIMESTAMP), '{url}{post_id}'); "
 	_insert(script)
