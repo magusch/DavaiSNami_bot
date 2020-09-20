@@ -26,7 +26,7 @@ bot = telebot.TeleBot(token)
 server = Flask(__name__)
 
 markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт' , 'выставки']
+date_menu=['сегодня', 'завтра', 'выходные', 'выставки','мне повезёт' ]
 markup.add(types.KeyboardButton(date_menu[0].capitalize()), types.KeyboardButton(date_menu[1].capitalize()))
 markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()), types.KeyboardButton(date_menu[4].capitalize()))
 

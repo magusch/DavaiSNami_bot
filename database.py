@@ -21,7 +21,7 @@ url='https://t.me/DavaiSNami/'
 monthes=['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
 
 TAGS_EVENTS = ["id", "title", "post_id"]
-TABLENAME_EVENTS = "events"
+TABLENAME_EVENTS = os.environ.get('TABLENAME_EVENTS')
 
 
 def get_db_connection():
