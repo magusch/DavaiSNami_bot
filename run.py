@@ -26,7 +26,7 @@ bot = telebot.TeleBot(token)
 server = Flask(__name__)
 
 markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт' , 'выставки']
+date_menu=['сегодня', 'завтра', 'выходные', 'выставки','мне повезёт' ]
 markup.add(types.KeyboardButton(date_menu[0].capitalize()), types.KeyboardButton(date_menu[1].capitalize()))
 markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()), types.KeyboardButton(date_menu[4].capitalize()))
 
@@ -48,9 +48,10 @@ def send_text(message):
 		bot.forward_message(message.chat.id, id_channel, int(answer))
 	elif code == 1:
 		bot.reply_to(message, answer, reply_markup=markup)
-		bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
-		bot.send_message(id_admin, bad_message) 
-
+		#bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
+		#bot.send_message(id_admin, bad_message) 
+	msg = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
+	bot.send_message(id_admin, msg) #delete
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
 def take_post_fromChannel(message):
@@ -64,19 +65,17 @@ def take_post_fromChannel(message):
 		except:
 			bot.send_message(id_admin, 'Ошибка')
 	else:
-		time.sleep(30)
+		#time.sleep(30)
 		try:
 			if not check_event_in_db(message.message_id):
 				if save_post(post, message.message_id):
 					bot.send_message(id_admin, 'Ошибка_post')
-			else:
-				bot.send_message(id_admin, 'Пост существует)')
 		except Exception as e:
 			bot.send_message(id_admin, 'Ошибка_2')
 			bot.send_message(id_admin, str(e))
 
 
-
+#req = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={URL}/webhook"
 
 try:
 	@server.route("/webhook", methods=['POST'])
