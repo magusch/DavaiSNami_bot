@@ -65,7 +65,7 @@ def take_post_fromChannel(message):
 		except:
 			bot.send_message(id_admin, 'Ошибка')
 	else:
-		#time.sleep(30)
+		time.sleep(20)
 		try:
 			if not check_event_in_db(message.message_id):
 				if save_post(post, message.message_id):
