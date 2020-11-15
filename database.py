@@ -148,3 +148,30 @@ def get_random_event(date):
 #		query="DELETE FROM posts WHERE post_id<%s;"
 #		cursor.execute(query,str(posts_ids))
 # 		conn.commit()
+
+
+#____________REMINDER___________
+# 
+def get_date_title(post_id):
+	script = f'SELECT title, date_from FROM {TABLENAME_EVENTS} Where post_id={post_id}';
+	answer = _get(script)
+	if answer:
+		remind = {'title':answer[0][0], 'date':answer[0][1]}
+		return remind
+
+
+def save_reminder(remind):
+	script = f"INSERT INTO reminder (user_id, title, post_id, date) \
+		VALUES ({remind['user_id']}, '{remind['title']}', '{remind['post_id']}', '{remind['date']}'::date)"
+
+	_insert(script)
+
+def delete_reminder():
+	script = f"DELETE FROM reminder WHERE date = current_date"
+	_insert(script)
+
+def get_reminder():
+	script = f'SELECT user_id, title, post_id FROM reminder WHERE date = current_date'
+	return _get(script)
+	
+#____________END___REMINDER___________
