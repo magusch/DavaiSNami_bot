@@ -76,7 +76,9 @@ def exibit_analys(post, message_id):
 	title_list = get_title_list(post)
 
 	exib=dict()
-	exib['date_before'] = datetime(day = int(title_list[1]), month = month_int2name.index(title_list[2][:3].lower())+1, year=year) 
+	date_before = datetime(day = int(title_list[1]), month = month_int2name.index(title_list[2][:3].lower())+1, year=year)
+	if date_before<datetime.now(): date_before=date_before.replace(year=year+1)
+	exib['date_before'] = date_before
 	exib['title'] = ' '.join(title_list[3:])
 	exib['post_id'] = message_id
 			
