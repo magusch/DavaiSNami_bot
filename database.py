@@ -20,7 +20,7 @@ url='https://t.me/DavaiSNami/'
 
 monthes=['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
 
-TAGS_EVENTS = ["id", "title", "post_id"]
+TAGS_EVENTS = ["id", "title", "post_id", "price"]
 TABLENAME_EVENTS = os.environ.get('TABLENAME_EVENTS')
 
 
@@ -70,7 +70,7 @@ def get_message_with_events(dt):
 		return "Мероприятий ещё не появилось"
 
 	for event in events:
-		message += '[%s](https://t.me/DavaiSNami/%s)\n' %(event['title'], event['post_id'])
+		message += '[%s](https://t.me/DavaiSNami/%s) – %s\n' %(event['title'], event['post_id'], event['price'])
 
 
 	return message
@@ -95,7 +95,7 @@ def event_by_date(dt):
     events = list()
     for values in _get(script):
         events.append(
-            dict(title=values[1], post_id=values[2])
+            dict(title=values[1], post_id=values[2], price=values[3])
         )
 
     return events
@@ -148,3 +148,30 @@ def get_random_event(date):
 #		query="DELETE FROM posts WHERE post_id<%s;"
 #		cursor.execute(query,str(posts_ids))
 # 		conn.commit()
+
+
+#____________REMINDER___________
+# 
+def get_date_title(post_id):
+	script = f'SELECT title, date_from FROM {TABLENAME_EVENTS} Where post_id={post_id}';
+	answer = _get(script)
+	if answer:
+		remind = {'title':answer[0][0], 'date':answer[0][1]}
+		return remind
+
+
+def save_reminder(remind):
+	script = f"INSERT INTO reminder (user_id, title, post_id, date) \
+		VALUES ({remind['user_id']}, '{remind['title']}', '{remind['post_id']}', '{remind['date']}'::date)"
+
+	_insert(script)
+
+def delete_reminder():
+	script = f"DELETE FROM reminder WHERE date = current_date"
+	_insert(script)
+
+def get_reminder():
+	script = f'SELECT user_id, title, post_id FROM reminder WHERE date = current_date'
+	return _get(script)
+	
+#____________END___REMINDER___________

@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 
 from database import get_message_with_events, find_exibitions, save_exibition, save_event, get_random_event
 
+from database import get_reminder,delete_reminder
+
 date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт', 'выставки']
 
 monthes = ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
@@ -74,7 +76,9 @@ def exibit_analys(post, message_id):
 	title_list = get_title_list(post)
 
 	exib=dict()
-	exib['date_before'] = datetime(day = int(title_list[1]), month = month_int2name.index(title_list[2][:3].lower())+1, year=year) 
+	date_before = datetime(day = int(title_list[1]), month = month_int2name.index(title_list[2][:3].lower())+1, year=year)
+	if date_before<datetime.now(): date_before=date_before.replace(year=year+1)
+	exib['date_before'] = date_before
 	exib['title'] = ' '.join(title_list[3:])
 	exib['post_id'] = message_id
 			
@@ -109,4 +113,30 @@ def save_post(post, post_id):
 		i_prev_month = i_m+2
 
 	save_event(title, post_id, dates_from, dates_to)
+
+
+def get_reminder_events():
+#(user_id, title, post_id)
+	remind_events = get_reminder()
+	users_message={}
+	
+	for events in remind_events:
+		user_id = events[0]
+
+		ev = {'title':events[1],'post_id':events[2]}
+		if user_id not in users_message: users_message[user_id] = []
+		users_message[user_id].append(ev)
+
+	for user, events in users_message.items():
+		message = '*Сегодня:*\n\n'
+		for e in events:
+			url = f"https://t.me/DavaiSNami/{e['post_id']}"
+			message += f"[{e['title']}]({url})\n"
+		users_message[user]=message
+
+	delete_reminder()
+	return users_message
+
+
+	
 
