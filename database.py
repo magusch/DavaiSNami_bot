@@ -20,7 +20,7 @@ url='https://t.me/DavaiSNami/'
 
 monthes=['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
 
-TAGS_EVENTS = ["id", "title", "post_id"]
+TAGS_EVENTS = ["id", "title", "post_id", "price"]
 TABLENAME_EVENTS = os.environ.get('TABLENAME_EVENTS')
 
 
@@ -70,7 +70,7 @@ def get_message_with_events(dt):
 		return "Мероприятий ещё не появилось"
 
 	for event in events:
-		message += '[%s](https://t.me/DavaiSNami/%s)\n' %(event['title'], event['post_id'])
+		message += '[%s](https://t.me/DavaiSNami/%s) – %s\n' %(event['title'], event['post_id'], event['price'])
 
 
 	return message
@@ -95,7 +95,7 @@ def event_by_date(dt):
     events = list()
     for values in _get(script):
         events.append(
-            dict(title=values[1], post_id=values[2])
+            dict(title=values[1], post_id=values[2], price=values[3])
         )
 
     return events
