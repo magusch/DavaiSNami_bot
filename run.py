@@ -29,12 +29,17 @@ bot = telebot.TeleBot(token)
 server = Flask(__name__)
 
 markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-date_menu=['сегодня', 'завтра', 'выходные', 'выставки','мне повезёт' ]
+date_menu=['сегодня', 'завтра', 'выходные', 'выставки','мне повезёт', 'день недели']
 markup.add(types.KeyboardButton(date_menu[0].capitalize()), types.KeyboardButton(date_menu[1].capitalize()))
-markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()), types.KeyboardButton(date_menu[4].capitalize()))
+markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()),
+		   types.KeyboardButton(date_menu[4].capitalize()), types.KeyboardButton(date_menu[5].capitalize()))
 
+week_menu = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вск']
+markup_week = types.ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
 
-
+markup_week.add(types.KeyboardButton(week_menu[0]), types.KeyboardButton(week_menu[1]), types.KeyboardButton(week_menu[2]))
+markup_week.add(types.KeyboardButton(week_menu[3]), types.KeyboardButton(week_menu[4]),
+		   types.KeyboardButton(week_menu[5]), types.KeyboardButton(week_menu[6]))
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -48,15 +53,21 @@ def send_text(message):
 	# 		bot.send_message(user, msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 	if message.text:
-		answer, code = what_message(message.text.lower())
+		if message.text == date_menu[5].capitalize():
+			bot.send_message(message.chat.id, 'Дни недели', disable_web_page_preview=True,
+							 reply_markup=markup_week)
+			code=-1
+		else:
+			answer, code = what_message(message.text.lower())
 		if code == 0:
-			bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)	
+			bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
 		elif code == 2:
 			bot.forward_message(message.chat.id, id_channel, int(answer))
 		elif code == 1:
 			bot.reply_to(message, answer, reply_markup=markup)
 			#bad_message = message.text+' from @%s (%s %s)' %(message.from_user.username, message.from_user.first_name, message.from_user.last_name)
-			#bot.send_message(id_admin, bad_message) 
+			#bot.send_message(id_admin, bad_message)
+
 	elif message.forward_from_chat:#
 		if message.forward_from_chat.id==int(id_channel):
 			post_id = message.forward_from_message_id

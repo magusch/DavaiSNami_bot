@@ -120,21 +120,21 @@ def get_list_dates(date_today):
     return date_list
 
 
-phrases_exhibitions = ['Скоро заканчиваются', 'До конца следующего месяца', 'Все остальные']
+phrases_exhibitions = ['Скоро заканчиваются', 'Заканчиваются в следующем месяце', 'Остальные']
 
 
 def find_exibitions(date_today):
     date_list = get_list_dates(date_today)
 
     script = "SELECT title, post_id, date_before FROM exhibitions \
-	WHERE date_before >= cast('%s' as DATE) ORDER BY date_before" %(date_today)
-    o = 0
-    message = f"*Выставки:*\n\n{phrases_exhibitions[0]}:"
+    WHERE date_before >= cast('%s' as DATE) order by date_before" %(date_today)
+    p = 0
+    message = f"*Выставки:*\n{phrases_exhibitions[0]}:\n"
     for exib in _get(script):
-        if exib[2] > date_list[o]:
-            o += 1
-            message += f"\n{phrases_exhibitions[o]}:"
-        message += f"{message}[{exib[0]}]({url}{exib[1]})\n"
+        if exib[2] > date_list[p]:
+            p += 1
+            message += f"\n{phrases_exhibitions[p]}:\n"
+        message = f"{message}[{exib[0]}]({url}{exib[1]})\n"
     return message
 
 
@@ -143,9 +143,10 @@ def save_event(title, post_id, dates_from, dates_to):
     script = ''
     for i in range(len(dates_from)):
         script += f"INSERT INTO {TABLENAME_EVENTS} (id, title, post_id, date_from, date_to) \
-			VALUES  (4{random.randint(1000,9999)}4, '{title}', {post_id},\
-				cast('{dates_from[i]}' as TIMESTAMP), cast('{dates_to[i]}' as TIMESTAMP)); "
+        VALUES  (4{random.randint(1000,9999)}4, '{title}', {post_id},\
+            cast('{dates_from[i]}' as TIMESTAMP), cast('{dates_to[i]}' as TIMESTAMP)); "
     _insert(script)
+
 
 def get_random_event(date):
     script = (

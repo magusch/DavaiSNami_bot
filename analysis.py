@@ -5,17 +5,21 @@ from database import get_message_with_events, find_exibitions, save_exibition, s
 
 from database import get_reminder,delete_reminder
 
-date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт', 'выставки']
+date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт', 'выставки', 'день недели']
 
 monthes = ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
+week_menu = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вск']
 month_int2name = [month[:3] for month in monthes]
 year = (datetime.utcnow()+timedelta(hours=3)).year
 
 
 def get_day(when, daynow):
-	if when==5 or when==6:
-		weekday = daynow.weekday()
-		when = when - weekday
+	return daynow + timedelta(days=when)
+
+
+def get_weekday(when, daynow):
+	when = when - daynow.weekday()
+	if when < 0: when = 7 + when
 	day_events = daynow + timedelta(days=when)
 	return day_events
 
@@ -25,16 +29,17 @@ def what_message(message_from_user):
 	code = 0
 	if message_from_user == date_menu[0]:
 		date_with_events = get_day(0, daynow)
-		answer=get_message_with_events(date_with_events)
-
+		answer = get_message_with_events(date_with_events)
 	elif message_from_user == date_menu[1]:
 		date_with_events = get_day(1, daynow)
-		answer=get_message_with_events(date_with_events)
-
-	elif message_from_user == date_menu[2]:
-		date_with_events = get_day(5, daynow)
 		answer = get_message_with_events(date_with_events)
-		date_with_events = get_day(6, daynow)
+	elif message_from_user in week_menu:
+		date_with_events = get_weekday(week_menu.index(message_from_user), daynow)
+		answer = get_message_with_events(date_with_events)
+	elif message_from_user == date_menu[2]:
+		date_with_events = get_weekday(5, daynow)
+		answer = get_message_with_events(date_with_events)
+		date_with_events = get_weekday(6, daynow)
 		answer += f"\n{get_message_with_events(date_with_events)}"
 
 	elif message_from_user == date_menu[4]:
@@ -63,7 +68,6 @@ def what_message(message_from_user):
 		except:
 			code = 1
 			answer = 'Укажите дату, подробности: /help'
-
 	return (answer, code)
 
 
