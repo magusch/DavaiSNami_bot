@@ -1,4 +1,4 @@
-import re, time
+import re, datetime
 import psycopg2
 
 import random
@@ -25,61 +25,61 @@ TABLENAME_EVENTS = os.environ.get('TABLENAME_EVENTS')
 
 
 def get_db_connection():
-	return psycopg2.connect(DATABASE_URL, sslmode='require')
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def _get(script):
-	db_cursor = get_db_connection().cursor()
-	db_cursor.execute(script)
-	values = db_cursor.fetchall()
-	db_cursor.close()
-	return values
+    db_cursor = get_db_connection().cursor()
+    db_cursor.execute(script)
+    values = db_cursor.fetchall()
+    db_cursor.close()
+    return values
 
 def _insert(script):
-	"""
-	    Parameters:
-	    -----------
-	    data : list of values
-	        inserting data
-	    script : str
-	        executing script
-	    """
-	db_connection = get_db_connection()
-	db_cursor = db_connection.cursor()
+    """
+        Parameters:
+        -----------
+        data : list of values
+            inserting data
+        script : str
+            executing script
+        """
+    db_connection = get_db_connection()
+    db_cursor = db_connection.cursor()
 
-	db_cursor.execute(script)
-	db_connection.commit()
+    db_cursor.execute(script)
+    db_connection.commit()
 
-	db_connection.close()
-	db_cursor.close()
+    db_connection.close()
+    db_cursor.close()
 
 
 def date_from_mess(mess):
-	Message=str(mess)+':\n'
-	monthRequest=re.split(r'\d',mess)[-1][1:].lower()
-	dateRequest=int(re.split(r'\s',mess)[0])
-	if dateRequest>31 or monthRequest not in monthes:
-		raise IOError("not correct data")
-	return dateRequest, monthRequest
+    Message=str(mess)+':\n'
+    monthRequest=re.split(r'\d',mess)[-1][1:].lower()
+    dateRequest=int(re.split(r'\s',mess)[0])
+    if dateRequest>31 or monthRequest not in monthes:
+        raise IOError("not correct data")
+    return dateRequest, monthRequest
 
 def get_message_with_events(dt):
-	message = f"*{dt.day} {monthes[dt.month-1]}:*\n"
+    message = f"*{dt.day} {monthes[dt.month-1]}:*\n"
 
-	events = event_by_date(dt)
+    events = event_by_date(dt)
 
-	if not events:
-		return "Мероприятий ещё не появилось"
+    if not events:
+        return "Мероприятий ещё не появилось"
 
-	for event in events:
-		message += '[%s](https://t.me/DavaiSNami/%s) – %s\n' %(event['title'], event['post_id'], event['price'])
+    for event in events:
+        message += '[%s](https://t.me/DavaiSNami/%s) – %s\n' %(event['title'], event['post_id'], event['price'])
 
 
-	return message
+    return message
 
 def check_event_in_db(post_id):
-	script = f"SELECT id FROM {TABLENAME_EVENTS} WHERE post_id={post_id}"
-	if _get(script):
-		return True
-	return False
+    script = f"SELECT id FROM {TABLENAME_EVENTS} WHERE post_id={post_id}"
+    if _get(script):
+        return True
+    return False
 
 def event_by_date(dt):
     """
@@ -87,9 +87,9 @@ def event_by_date(dt):
     Only year, month and day.
     """
     script = (
-        f"SELECT {', '.join(TAGS_EVENTS)} FROM {TABLENAME_EVENTS} "
-        "WHERE post_id IS NOT NULL "
-        "AND date_from::date <= '%s'::date AND date_to::date >= '%s'::date" % (dt,dt)
+            f"SELECT {', '.join(TAGS_EVENTS)} FROM {TABLENAME_EVENTS} "
+            "WHERE post_id IS NOT NULL "
+            "AND date_from::date <= '%s'::date AND date_to::date >= '%s'::date" % (dt,dt)
     )
 
     events = list()
@@ -100,46 +100,64 @@ def event_by_date(dt):
 
     return events
 
+
 def save_exibition(exib):
-	script = f"INSERT INTO exhibitions (post_id, title, date_before) \
-		VALUES ({exib['post_id']}, '{exib['title']}', cast('{exib['date_before']}' as TIMESTAMP))"
-	#data = [exib['post_id'], exib['title'], exib['date_before']]
-	_insert(script)
+    script = f"INSERT INTO exhibitions (post_id, title, date_before) \
+        VALUES ({exib['post_id']}, '{exib['title']}', cast('{exib['date_before']}' as TIMESTAMP))"
+    #data = [exib['post_id'], exib['title'], exib['date_before']]
+    _insert(script)
+
+
+def get_list_dates(date_today):
+    date_list = [date_today + datetime.timedelta(weeks=2)]
+    if date_today.month < 11:
+        date_list.append(date_today.replace(month=date_today.month+2, day=1) - datetime.timedelta(days=1))
+    elif date_today.month == 11:
+        date_list.append(date_today.replace(month=12, day=31))
+    else:
+        date_list.append(date_today.replace(year=date_today.year+1, month=1, day=31))
+    date_list.append(date_today.replace(year=date_today.year+10))
+    return date_list
+
+
+phrases_exhibitions = ['Скоро заканчиваются', 'До конца следующего месяца', 'Все остальные']
 
 
 def find_exibitions(date_today):
-	#dateRequest, monthRequest=date_from_mess(mess)
-	#monthRequest=monthes.index(monthRequest)+1
-	script = "SELECT title, post_id FROM exhibitions \
-	WHERE date_before >= cast('%s' as DATE)" %(date_today)
+    date_list = get_list_dates(date_today)
 
-	message='*Выставки:*\n\n'
-	for exib in _get(script):
-		#link=url+str(p[1])
-		message = f"{message}[{exib[0]}]({url}{exib[1]})\n"
-	return message
+    script = "SELECT title, post_id, date_before FROM exhibitions \
+	WHERE date_before >= cast('%s' as DATE) ORDER BY date_before" %(date_today)
+    o = 0
+    message = f"*Выставки:*\n\n{phrases_exhibitions[0]}:"
+    for exib in _get(script):
+        if exib[2] > date_list[o]:
+            o += 1
+            message += f"\n{phrases_exhibitions[o]}:"
+        message += f"{message}[{exib[0]}]({url}{exib[1]})\n"
+    return message
 
 
 def save_event(title, post_id, dates_from, dates_to):
-	#Delete FROM events WHERE id>410003 AND id<499995;
-	script = ''
-	for i in range(len(dates_from)):
-		script += f"INSERT INTO {TABLENAME_EVENTS} (id, title, post_id, date_from, date_to) \
+    #Delete FROM events WHERE id>410003 AND id<499995;
+    script = ''
+    for i in range(len(dates_from)):
+        script += f"INSERT INTO {TABLENAME_EVENTS} (id, title, post_id, date_from, date_to) \
 			VALUES  (4{random.randint(1000,9999)}4, '{title}', {post_id},\
 				cast('{dates_from[i]}' as TIMESTAMP), cast('{dates_to[i]}' as TIMESTAMP)); "
-	_insert(script)
-	
+    _insert(script)
+
 def get_random_event(date):
-	script = (
+    script = (
         f"SELECT post_id FROM {TABLENAME_EVENTS} "
         "WHERE post_id IS NOT NULL "
         f"AND '{date}'::date <= date_from::date "
         f"AND '{date}'::date + 5 >= date_from::date;"
     )
-	if _get(script):
-		return (random.choice(_get(script))[0], 2)
-	else:
-		return ('Мероприятий нет', 0)
+    if _get(script):
+        return (random.choice(_get(script))[0], 2)
+    else:
+        return ('Мероприятий нет', 0)
 
 # def delete(posts_ids):
 # 	with conn.cursor() as cursor:
@@ -153,25 +171,25 @@ def get_random_event(date):
 #____________REMINDER___________
 # 
 def get_date_title(post_id):
-	script = f'SELECT title, date_from FROM {TABLENAME_EVENTS} Where post_id={post_id}';
-	answer = _get(script)
-	if answer:
-		remind = {'title':answer[0][0], 'date':answer[0][1]}
-		return remind
+    script = f'SELECT title, date_from FROM {TABLENAME_EVENTS} Where post_id={post_id}';
+    answer = _get(script)
+    if answer:
+        remind = {'title':answer[0][0], 'date':answer[0][1]}
+        return remind
 
 
 def save_reminder(remind):
-	script = f"INSERT INTO reminder (user_id, title, post_id, date) \
+    script = f"INSERT INTO reminder (user_id, title, post_id, date) \
 		VALUES ({remind['user_id']}, '{remind['title']}', '{remind['post_id']}', '{remind['date']}'::date)"
 
-	_insert(script)
+    _insert(script)
 
 def delete_reminder():
-	script = f"DELETE FROM reminder WHERE date = current_date"
-	_insert(script)
+    script = f"DELETE FROM reminder WHERE date = current_date"
+    _insert(script)
 
 def get_reminder():
-	script = f'SELECT user_id, title, post_id FROM reminder WHERE date = current_date'
-	return _get(script)
-	
+    script = f'SELECT user_id, title, post_id FROM reminder WHERE date = current_date'
+    return _get(script)
+
 #____________END___REMINDER___________
