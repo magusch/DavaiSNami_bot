@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 
 if os.path.exists(dotenv_path):
-    load_dotenv(dotenv_path)
+	load_dotenv(dotenv_path)
 
 token= os.environ['token']
 
@@ -32,22 +32,23 @@ markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
 date_menu=['сегодня', 'завтра', 'выходные', 'выставки','мне повезёт', 'день недели']
 markup.add(types.KeyboardButton(date_menu[0].capitalize()), types.KeyboardButton(date_menu[1].capitalize()))
 markup.add(types.KeyboardButton(date_menu[2].capitalize()), types.KeyboardButton(date_menu[3].capitalize()),
-		   types.KeyboardButton(date_menu[4].capitalize()), types.KeyboardButton(date_menu[5].capitalize()))
+			types.KeyboardButton(date_menu[4].capitalize()), types.KeyboardButton(date_menu[5].capitalize()))
 
 week_menu = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вск']
 markup_week = types.ReplyKeyboardMarkup(row_width=3, resize_keyboard=True)
 
 markup_week.add(types.KeyboardButton(week_menu[0]), types.KeyboardButton(week_menu[1]), types.KeyboardButton(week_menu[2]))
 markup_week.add(types.KeyboardButton(week_menu[3]), types.KeyboardButton(week_menu[4]),
-		   types.KeyboardButton(week_menu[5]), types.KeyboardButton(week_menu[6]))
+				types.KeyboardButton(week_menu[5]), types.KeyboardButton(week_menu[6]))
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
 	bot.reply_to(message, "Привет! Это бот канала @DavaiSNami. С моей помощью можно получить краткий гид мероприятий на определённый день, на выходные или по проходящим выставкам в Петербурге. \n\n Чтобы начать укажите дату в формате: *«31 декабря»*, *«31.12»*, *«31»* или фразу: *«Сегодня»*, *«Завтра»*, *«Выходные»*.", parse_mode="Markdown", reply_markup=markup)
 
+
 @bot.message_handler(content_types=['text', 'photo'])
 def send_text(message):
-	# if message.text=='q':		
+	# if message.text=='q':
 	# 	users_message = get_reminder_events()
 	# 	for user, msg in users_message.items(): 
 	# 		bot.send_message(user, msg, parse_mode="Markdown", disable_web_page_preview=True)
@@ -55,10 +56,11 @@ def send_text(message):
 	if message.text:
 		if message.text == date_menu[5].capitalize():
 			bot.send_message(message.chat.id, 'Дни недели', disable_web_page_preview=True,
-							 reply_markup=markup_week)
+							reply_markup=markup_week)
 			code=-1
 		else:
 			answer, code = what_message(message.text.lower())
+
 		if code == 0:
 			bot.send_message(message.chat.id, answer, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
 		elif code == 2:
@@ -69,10 +71,10 @@ def send_text(message):
 			#bot.send_message(id_admin, bad_message)
 
 	elif message.forward_from_chat:#
-		if message.forward_from_chat.id==int(id_channel):
+		if message.forward_from_chat.id == int(id_channel):
 			post_id = message.forward_from_message_id
 
-			remind = get_date_title(post_id) #get title and date from database of events
+			remind = get_date_title(post_id) # Get title and date from database of events
 			
 			if remind:
 				remind.update({'post_id': post_id, 'user_id': message.chat.id})
@@ -86,12 +88,12 @@ def send_text(message):
 	bot.send_message(id_admin, msg) #delete
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
-def take_post_fromChannel(message):
+def take_post_from_channel(message):
 	if message.content_type =='text':
 		post=message.text
 	else:
 		post=message.caption
-	if post[:2]=='До': 
+	if post[:2] == 'До':
 		try:
 			exibit_analys(post, message.message_id)			
 		except:

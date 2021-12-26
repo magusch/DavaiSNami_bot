@@ -5,7 +5,7 @@ from database import get_message_with_events, find_exibitions, save_exibition, s
 
 from database import get_reminder,delete_reminder
 
-date_menu=['сегодня', 'завтра', 'выходные', 'мне повезёт', 'выставки', 'день недели']
+date_menu = ['сегодня', 'завтра', 'выходные', 'мне повезёт', 'выставки', 'день недели']
 
 monthes = ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
 week_menu = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вск']

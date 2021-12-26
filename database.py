@@ -71,6 +71,10 @@ def get_message_with_events(dt):
 
     for event in events:
         message += '[%s](https://t.me/DavaiSNami/%s) – %s\n' %(event['title'], event['post_id'], event['price'])
+        if event['price']:
+            message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']}) – {event['price']}\n"
+        else:
+            message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']})\n"
 
 
     return message
@@ -104,18 +108,23 @@ def event_by_date(dt):
 def save_exibition(exib):
     script = f"INSERT INTO exhibitions (post_id, title, date_before) \
         VALUES ({exib['post_id']}, '{exib['title']}', cast('{exib['date_before']}' as TIMESTAMP))"
-    #data = [exib['post_id'], exib['title'], exib['date_before']]
     _insert(script)
 
 
+# List of three dates for dividing exibitions on category: ends in two week, ends in next month and others
 def get_list_dates(date_today):
+    # 1) Ends in two week
     date_list = [date_today + datetime.timedelta(weeks=2)]
+
+    # 2) Ends in next month
     if date_today.month < 11:
         date_list.append(date_today.replace(month=date_today.month+2, day=1) - datetime.timedelta(days=1))
     elif date_today.month == 11:
         date_list.append(date_today.replace(month=12, day=31))
     else:
         date_list.append(date_today.replace(year=date_today.year+1, month=1, day=31))
+
+    # 3) Others
     date_list.append(date_today.replace(year=date_today.year+10))
     return date_list
 
@@ -139,7 +148,6 @@ def find_exibitions(date_today):
 
 
 def save_event(title, post_id, dates_from, dates_to):
-    #Delete FROM events WHERE id>410003 AND id<499995;
     script = ''
     for i in range(len(dates_from)):
         script += f"INSERT INTO {TABLENAME_EVENTS} (id, title, post_id, date_from, date_to) \
@@ -170,7 +178,7 @@ def get_random_event(date):
 
 
 #____________REMINDER___________
-# 
+
 def get_date_title(post_id):
     script = f'SELECT title, date_from FROM {TABLENAME_EVENTS} Where post_id={post_id}';
     answer = _get(script)
@@ -181,8 +189,7 @@ def get_date_title(post_id):
 
 def save_reminder(remind):
     script = f"INSERT INTO reminder (user_id, title, post_id, date) \
-		VALUES ({remind['user_id']}, '{remind['title']}', '{remind['post_id']}', '{remind['date']}'::date)"
-
+        VALUES ({remind['user_id']}, '{remind['title']}', '{remind['post_id']}', '{remind['date']}'::date)"
     _insert(script)
 
 def delete_reminder():
