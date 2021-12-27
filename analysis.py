@@ -66,7 +66,7 @@ def what_message(message_from_user):
 				month = daynow.month
 				if day < daynow.day: month+=1
 
-			if month < daynow.month:
+			if month >= daynow.month:
 				year = daynow.year
 			else:
 				year = daynow.year + 1
