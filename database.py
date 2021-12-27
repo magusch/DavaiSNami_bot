@@ -67,7 +67,7 @@ def get_message_with_events(dt):
     events = event_by_date(dt)
 
     if not events:
-        return "Мероприятий ещё не появилось"
+        return message + "мероприятий ещё не появилось"
 
     for event in events:
         if event['price']:
