@@ -53,8 +53,11 @@ def what_message(message_from_user):
 		try:
 			day = int(mq[0])
 			if len(mq) < 2:
-				month = daynow.month
-				if day < daynow.day: month+=1
+				if day < daynow.day:
+					month = daynow.month % 12 + 1
+				else:
+					month = daynow.month
+
 			elif re.search(r'[\d+]', mq[1]): #TODO: check month value
 				month = int(mq[1])
 			elif mq[1][:3] in month_int2name:
@@ -63,16 +66,21 @@ def what_message(message_from_user):
 				month = daynow.month
 				if day < daynow.day: month+=1
 
-			date_with_events = datetime(day=day, month=month, year=daynow.year)
+			if month > daynow.month:
+				year = daynow.year
+			else:
+				year = daynow.year + 1
+
+			date_with_events = datetime(day=day, month=month, year=year)
 			answer = get_message_with_events(date_with_events)
 		except:
 			code = 1
 			answer = 'Укажите дату, подробности: /help'
-	return (answer, code)
+	return answer, code
 
 
 def get_title_list(post):
-	title=post[:post.find('\n')].strip('\u200b')
+	title = post[:post.find('\n')].strip('\u200b')
 	return title.split(' ')
 
 
@@ -88,13 +96,14 @@ def exibit_analys(post, message_id):
 			
 	save_exibition(exib)
 
+
 def save_post(post, post_id):
 	title_list = get_title_list(post)
 
 	index_month = [title_list.index(word) for word in title_list if word.lower() in monthes]
 
-	if len(index_month)==0:
-		return True
+	if len(index_month) == 0: return True
+
 	title = ' '.join(title_list[index_month[-1]+1:])
 
 	i_prev_month = 0
@@ -122,7 +131,7 @@ def save_post(post, post_id):
 def get_reminder_events():
 #(user_id, title, post_id)
 	remind_events = get_reminder()
-	users_message={}
+	users_message = {}
 	
 	for events in remind_events:
 		user_id = events[0]

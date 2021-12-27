@@ -70,7 +70,6 @@ def get_message_with_events(dt):
         return "Мероприятий ещё не появилось"
 
     for event in events:
-        message += '[%s](https://t.me/DavaiSNami/%s) – %s\n' %(event['title'], event['post_id'], event['price'])
         if event['price']:
             message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']}) – {event['price']}\n"
         else:
