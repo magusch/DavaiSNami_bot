@@ -122,8 +122,22 @@ except:
 
 
 if run_from_user==1:
-	bot.send_message(id_admin, 'Polling')
-	bot.polling()
+	last_time_error = int(time.time())
+	attempt = 0
+	while attempt<5:
+		attempt += 1
+		try:
+			bot.send_message(id_admin, 'Polling')
+			bot.polling()
+		finally:
+			now_time = int(time.time())
+			different_time = (now_time - last_time_error)/60/60
+			print(f"Error: {attempt}. Last run was {different_time} hours ago")
+			time.sleep(attempt*60)
+			if different_time>2:
+				attempt = 0
+		last_time_error = int(time.time())
+
 else:
 	@server.route("/webhook", methods=['POST'])
 	def getMessage():
