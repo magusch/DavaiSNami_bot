@@ -75,7 +75,6 @@ def get_message_with_events(dt):
             else:
                 message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']})\n"
 
-    message += "\n@DavaiSNamiBot"  # Todo: put in env
     return message
 
 def check_event_in_db(post_id):
@@ -144,7 +143,6 @@ def find_exibitions(date_today):
             message += f"\n{phrases_exhibitions[p]}:\n"
         message = f"{message}[{exib[0]}]({url}{exib[1]})\n"
 
-    message += "\n@DavaiSNamiBot"
     return message
 
 

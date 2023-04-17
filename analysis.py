@@ -76,6 +76,8 @@ def what_message(message_from_user):
 		except:
 			code = 1
 			answer = 'Укажите дату, подробности: /help'
+
+	if type(answer)==str: answer += "\n@DavaiSNamiBot"  # Todo: put in env
 	return answer, code
 
 
