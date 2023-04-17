@@ -143,6 +143,8 @@ def find_exibitions(date_today):
             p += 1
             message += f"\n{phrases_exhibitions[p]}:\n"
         message = f"{message}[{exib[0]}]({url}{exib[1]})\n"
+
+    message += "\n@DavaiSNamiBot"
     return message
 
 
