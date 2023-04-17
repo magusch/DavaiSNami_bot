@@ -67,15 +67,15 @@ def get_message_with_events(dt):
     events = event_by_date(dt)
 
     if not events:
-        return message + "мероприятий ещё не появилось"
+        message += "мероприятий ещё не появилось"
+    else:
+        for event in events:
+            if event['price']:
+                message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']}) – {event['price']}\n"
+            else:
+                message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']})\n"
 
-    for event in events:
-        if event['price']:
-            message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']}) – {event['price']}\n"
-        else:
-            message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']})\n"
-
-
+    message += "\n@DavaiSNamiBot"  # Todo: put in env
     return message
 
 def check_event_in_db(post_id):
