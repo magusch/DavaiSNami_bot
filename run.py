@@ -7,7 +7,7 @@ from flask import Flask, request
 from analysis import what_message, exibit_analys, save_post, get_reminder_events
 from database import check_event_in_db
 
-from database import get_date_title, save_reminder
+from database import get_date_title, save_reminder, save_person
 
 from dotenv import load_dotenv
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -87,6 +87,7 @@ def send_text(message):
 
 	msg = f"{message.text} from @{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})"
 	bot.send_message(id_admin, msg) #delete
+	save_person(message.from_user.id, msg)
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
 def take_post_from_channel(message):

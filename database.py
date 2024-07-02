@@ -199,4 +199,13 @@ def get_reminder():
     script = f'SELECT user_id, title, post_id FROM reminder WHERE date = current_date'
     return _get(script)
 
+
+def save_person(user_id, message):
+    today = datetime.datetime.now()
+    script = f"INSERT INTO bot_users (user_id, message, date) \
+            VALUES ({user_id}, '{message}', '{today}'::timestamp)"
+    _insert(script)
+
+
+
 #____________END___REMINDER___________
