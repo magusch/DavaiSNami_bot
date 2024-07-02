@@ -22,6 +22,7 @@ URL = os.environ['URL']
 #PORT = int(os.environ.get('PORT'))
 id_admin = os.environ['id_admin']
 id_channel = os.environ['id_channel']
+channel_url = os.getenv('channel_url', '@DavaiSNami')
 
 
 bot = telebot.TeleBot(token)
@@ -43,7 +44,7 @@ markup_week.add(types.KeyboardButton(week_menu[3]), types.KeyboardButton(week_me
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-	bot.reply_to(message, "Привет! Это бот канала @DavaiSNami. С моей помощью можно получить краткий гид мероприятий на определённый день, на выходные или по проходящим выставкам в Петербурге. \n\n Чтобы начать укажите дату в формате: *«31 декабря»*, *«31.12»*, *«31»* или фразу: *«Сегодня»*, *«Завтра»*, *«Выходные»*.", parse_mode="Markdown", reply_markup=markup)
+	bot.reply_to(message, f"Привет! Это бот канала {channel_url}. С моей помощью можно получить краткий гид мероприятий на определённый день, на выходные или по проходящим выставкам в городе. \n\n Чтобы начать укажите дату в формате: *«31 декабря»*, *«31.12»*, *«31»* или фразу: *«Сегодня»*, *«Завтра»*, *«Выходные»*. Либо нажать на кнопку в меню.", parse_mode="Markdown", reply_markup=markup)
 
 
 @bot.message_handler(content_types=['text', 'photo'])
