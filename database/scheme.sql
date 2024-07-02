@@ -19,3 +19,12 @@ CREATE TABLE IF NOT EXISTS "reminder" (
     "post_id" INTEGER,
     "date" DATE
 );
+
+create table exhibitions
+(
+    post_id     integer
+        unique,
+    title       varchar(150),
+    date_before timestamp
+);
+
