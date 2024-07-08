@@ -16,7 +16,9 @@ DATABASE_URL =os.environ.get('DATABASE_URL')
 #conn = psycopg2.connect(DATABASE_URL, sslmode='require')
 
 
-url='https://t.me/DavaiSNami/'
+channel_url = os.getenv('channel_url', '@DavaiSNami').replace("\\", "").replace('@','')
+
+url = f'https://t.me/{channel_url}/'
 
 monthes=['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря']
 
@@ -71,9 +73,9 @@ def get_message_with_events(dt):
     else:
         for event in events:
             if event['price']:
-                message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']}) – {event['price']}\n"
+                message += f"[{event['title']}]({url}{event['post_id']}) – {event['price']}\n"
             else:
-                message += f"[{event['title']}](https://t.me/DavaiSNami/{event['post_id']})\n"
+                message += f"[{event['title']}]({url}{event['post_id']})\n"
 
     return message
 

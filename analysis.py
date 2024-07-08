@@ -1,4 +1,4 @@
-import re
+import re, os
 from datetime import datetime, timedelta
 
 from database import get_message_with_events, find_exibitions, save_exibition, save_event, get_random_event
@@ -12,6 +12,7 @@ week_menu = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вск']
 month_int2name = [month[:3] for month in monthes]
 year = (datetime.utcnow()+timedelta(hours=3)).year
 
+BOT_LINK = os.getenv('bot_link', '@DavaiSNamiBot')
 
 def get_day(when, daynow):
 	return daynow + timedelta(days=when)
@@ -77,7 +78,7 @@ def what_message(message_from_user):
 			code = 1
 			answer = 'Укажите дату, подробности: /help'
 
-	if type(answer)==str: answer += "\n@DavaiSNamiBot"  # Todo: put in env
+	if type(answer)==str: answer += f"\n[{BOT_LINK}]({BOT_LINK})"
 	return answer, code
 
 
