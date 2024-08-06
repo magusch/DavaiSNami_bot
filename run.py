@@ -96,13 +96,13 @@ def send_text(message):
 					bot.send_message(message.chat.id, 'Пост отправлен в GPT')
 					result = send_text_to_ai(text)
 					if result:
-						bot.send_message('Началась обработка текста, через некоторое время появится в админ панели')
+						bot.send_message(message.chat.id, 'Началась обработка текста, через некоторое время появится в админ панели')
 					else:
-						bot.send_message('Возникла ошибка')
+						bot.send_message(message.chat.id, 'Возникла ошибка')
 
 	if message.text:
 		text = message.text[0:100]
-	elif message.photo:
+	elif message.photo and message.caption:
 		text = message.caption[0:100]
 	else:
 		text = 'ANOTHER TYPE OF MESSAGE'
