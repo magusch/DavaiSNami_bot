@@ -28,3 +28,11 @@ create table exhibitions
     date_before timestamp
 );
 
+CREATE TABLE bot_users_general (
+               user_id BIGINT PRIMARY KEY,
+               nickname VARCHAR(50),
+               first_name VARCHAR(50),
+               last_name VARCHAR(50),
+               is_admin BOOLEAN DEFAULT FALSE,
+               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+           )

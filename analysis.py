@@ -1,4 +1,6 @@
-import re, os
+import os, re, json
+import requests
+
 from datetime import datetime, timedelta
 
 from database import get_message_with_events, find_exibitions, save_exibition, save_event, get_random_event
@@ -13,6 +15,9 @@ month_int2name = [month[:3] for month in monthes]
 year = (datetime.utcnow()+timedelta(hours=3)).year
 
 BOT_LINK = os.getenv('bot_link', '@DavaiSNamiBot')
+
+CHANNEL_API_URL = os.getenv('CHANNEL_API_URL')
+CHANNEL_API_TOKEN = os.getenv('CHANNEL_API_TOKEN')
 
 def get_day(when, daynow):
 	return daynow + timedelta(days=when)
@@ -153,6 +158,22 @@ def get_reminder_events():
 	delete_reminder()
 	return users_message
 
+def send_text_to_ai(text):
+	url = CHANNEL_API_URL + 'api/ai_update_event/'
+	headers = {
+		'Authorization': f"Bearer {CHANNEL_API_TOKEN}",
+		'Content-Type': 'application/json'
+	}
+	data = {
+		'is_new': 1,
+		'event': {
+			'full_text': text
+		}
+	}
+
+	response = requests.post(url, headers=headers, data=json.dumps(data))
+	if 'task_id' in response.json():
+		return True
 
 	
 

@@ -4,7 +4,9 @@ from telebot import types
 import os, time
 
 from flask import Flask, request
-from analysis import what_message, exibit_analys, save_post, get_reminder_events
+
+import database
+from analysis import what_message, exibit_analys, save_post, get_reminder_events, send_text_to_ai
 from database import check_event_in_db
 
 from database import get_date_title, save_reminder, save_person
@@ -50,7 +52,7 @@ def send_welcome(message):
 def send_text(message):
 	# if message.text=='q':
 	# 	users_message = get_reminder_events()
-	# 	for user, msg in users_message.items(): 
+	# 	for user, msg in users_message.items():
 	# 		bot.send_message(user, msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 	if message.text:
@@ -83,9 +85,30 @@ def send_text(message):
 				bot.send_message(remind['user_id'], msg)
 			else: 
 				bot.send_message(message.chat.id, 'Мероприятие прошло или является выставкой')
+		else:
+			if message.chat.id in admins:
+				if message.photo:
+					text = message.caption
+				else:
+					text = message.text
 
-	msg = f"{message.text} from @{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})"
-	bot.send_message(id_admin, msg) #delete
+				if text is not None:
+					bot.send_message(message.chat.id, 'Пост отправлен в GPT')
+					result = send_text_to_ai(text)
+					if result:
+						bot.send_message('Началась обработка текста, через некоторое время появится в админ панели')
+					else:
+						bot.send_message('Возникла ошибка')
+
+	if message.text:
+		text = message.text[0:100]
+	elif message.photo:
+		text = message.caption[0:100]
+	else:
+		text = 'ANOTHER TYPE OF MESSAGE'
+
+	msg = f"{text} from @{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})"
+	bot.send_message(id_admin, msg)
 	save_person(message.from_user.id, msg)
 
 @bot.channel_post_handler(content_types=['text', 'photo'])
@@ -125,6 +148,7 @@ except:
 if run_from_user==1:
 	last_time_error = int(time.time())
 	attempt = 0
+	admins = [admin[0] for admin in database.get_admins()]
 	while attempt<5:
 		attempt += 1
 		try:

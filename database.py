@@ -208,6 +208,10 @@ def save_person(user_id, message):
             VALUES ({user_id}, '{message}', '{today}'::timestamp)"
     _insert(script)
 
-
-
 #____________END___REMINDER___________
+
+
+def get_admins():
+    script = f"SELECT user_id FROM bot_users_general where is_admin is True"
+    return _get(script)
+
