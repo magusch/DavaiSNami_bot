@@ -6,13 +6,13 @@ import os, time
 from flask import Flask, request
 
 import database
-from analysis import what_message, exibit_analys, save_post, get_reminder_events, send_text_to_ai
+from old.analysis import what_message, exibit_analys, save_post, get_reminder_events, send_text_to_ai
 from database import check_event_in_db
 
 from database import get_date_title, save_reminder, save_person
 
 from dotenv import load_dotenv
-dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+dotenv_path = os.path.join(os.path.dirname(__file__), '../.env')
 
 if os.path.exists(dotenv_path):
 	load_dotenv(dotenv_path)
