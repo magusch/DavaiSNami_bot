@@ -8,12 +8,13 @@ URL = os.getenv('URL')
 ID_ADMIN = int(os.getenv('id_admin', 0))
 ID_CHANNEL = int(os.getenv('id_channel', 0))
 CHANNEL_LINK = os.getenv('channel_url', '@DavaiSNami')
+
+DATABASE_URL = os.getenv('DATABASE_URL')
 LANG = os.getenv('language', 'ru')
 
+API_URL = os.getenv('API_URL')
+API_TOKEN = os.getenv('API_TOKEN')
 
-START_MENU = {
-    'ru': ['']
-}
 
 DATE_MENU = {
     'today': 'сегодня',
@@ -24,57 +25,44 @@ DATE_MENU = {
     'weekday': 'день недели',
 }
 
-# MENU = {
-#     'date': DATE_MENU.update({
-#         'settings': '⚙ Настройки'
-#     }),
-#     'weekday': {
-#         'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
-#         'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вск', 'date': '⬅ Назад'
-#     },
-#     'city': {
-#         'spb': 'Санкт-Петербург',
-#         'date': '⬅ Назад'
-#     },
-#     'settings': {
-#         'city': '🏙 Выбрать город',
-#         'saved_events': '⭐ Сохраненные Мероприятия',
-#         'date': '⬅ Назад'
-#     }
-# }
 
 MENU = {
-    'date': {
-        'сегодня': 'today',
-        'завтра': 'tomorrow',
-        'выходные': 'weekend',
-        'выставки': 'exhibitions',
-        'мне повезёт': 'lucky',
-        'день недели': 'weekday',
-        '⚙ Настройки': 'settings'
+    'events': {
+        'today': 'Сегодня',
+        'tomorrow': 'Завтра',
+        'weekend':'Выходные',
+        'exhibitions': 'Выставки',
+        'lucky': 'Мне повезёт',
+        'weekday' : 'День Недели',
+        'settings': '⚙ Настройки',
     },
     'weekday': {
-        'Пн': 'Mon', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
-        'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вск', 'date': '⬅ Назад'
+        'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
+        'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вск', 'events': '⬅ Назад'
     },
     'city': {
-        'Санкт-Петербург': 'spb',
-        '⬅ Назад': 'date'
+        'spb': 'Санкт-Петербург',
+        'settings': '⬅ Назад'
     },
     'settings': {
-        '🏙 Выбрать город': 'city',
-        '⭐ Сохраненные Мероприятия': 'saved_events',
-        '⬅ Назад': 'date'
+        'events': '🧩 Мероприятия',
+       # '🏙 Выбор города': 'city',
+        'weekend_guide': '🌅 Гайд на выходные',
+        'saved_events': '⭐ Сохраненные Мероприятия',
+        'reminders': 'Напоминания',
+        'balance': '💎 Баланс',
     }
 }
 
-# DATE_MENU = {
-#     'ru': ['сегодня', 'завтра', 'выходные', 'выставки', 'мне повезёт', 'день недели'],
-#     #'en': ['today', 'tomorrow', 'weekend', 'exhibitions', 'im lucky', 'day of week'],
-#     #'commands'
-# }
+EXHIBITIONS_PHRASES = ['Скоро заканчиваются', 'Заканчиваются в следующем месяце', 'Остальные']
+
 
 WEEK_MENU = {
     'ru': ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вск'],
-    #'en': ['Mon', 'Tue', 'Wed', 'Thr', 'Fri', 'Sat', 'Sun']
+    'en': ['Mon', 'Tue', 'Wed', 'Thr', 'Fri', 'Sat', 'Sun']
+}
+
+MONTHES = {
+    'ru': ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря'],
+    'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 }

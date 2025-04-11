@@ -1,4 +1,6 @@
 requests==2.22.0
-aiogram
-aiohttp
-asyncpg
+aiogram==3.0.0b1
+aiohttp==3.8.5
+asyncpg==0.25.0
+sqlalchemy==2.0.24
+psycopg2-binary==2.9.10

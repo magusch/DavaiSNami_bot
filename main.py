@@ -8,7 +8,7 @@ from aiogram import types
 
 
 import config
-from handlers import commands, messages#, photos
+from handlers import callbacks, commands, messages#, photos
 
 dp = Dispatcher()
 
@@ -24,6 +24,15 @@ async def command_start_handler(message: types.Message) -> None:
 async def command_text_handler(message: types.Message) -> None:
     await messages.handle_message(message)
 
+#from database import get_user_settings, get_events_by_date, save_event
+
+
+@dp.callback_query()
+async def process_menu_callback(callback_query: types.CallbackQuery) -> None:
+    await callbacks.proccess_menu_callback(callback_query)
+    if callback_query.data == "reminders":
+        await callback_query.message.answer('hey напоминалка', parse_mode="Markdown")
+        pass
 
 
 async def main() -> None:
