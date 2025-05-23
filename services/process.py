@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import random
 from . import external_api
+from . import crud
 
 from config import CHANNEL_LINK, EXHIBITIONS_PHRASES, MONTHES
 
@@ -16,6 +17,20 @@ def get_weekday(offset, daynow):
 
 def date_to_markdown(date):
     return f"*{date.day} {MONTHES['ru'][date.month-1]}*\n"
+
+
+def build_event_message(events, is_dict=False):
+    lines = []
+    for event in events:
+        title = event['title'] if is_dict else event.title
+        post_url = event['post_url'] if is_dict else event.post_url
+        price = event['price'] if is_dict else event.price
+
+        if post_url:
+            if not post_url.startswith('http'):
+                post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+            lines.append(f"[{title}]({post_url}) – {price}")
+    return '\n'.join(lines)
 
 async def process_events(date_from, date_to=None):
     if type(date_from) != str:
@@ -41,8 +56,7 @@ async def process_events(date_from, date_to=None):
     message = date_to_markdown(date_from)
 
     if events['result']:
-        for event in events['result']['events']:
-            message += f"[{event['title']}]({event['post_url']}) – {event['price']}\n"
+        message += build_event_message(events['result']['events'], is_dict=True)
     else:
         message = 'Мероприятий не найдено'
 
@@ -118,11 +132,61 @@ async def process_lucky_event(daynow):
     message = ''
     if events['result']:
         event = random.choice(events['result']['events'])
-        message = f"[{event['title']}]({event['post_url']}) – {event['price']}\n"
+        message += build_event_message([event], is_dict=True)
     return message
 
 
 async def process_telegram_monitor(monitor_dict):
     await crud.create_telegram_monitor(monitor_dict)
 
-    
+
+async def process_user_event(user_event_dict):
+    if 'user_id' not in user_event_dict and 'telegram_id' in user_event_dict:
+        user = await crud.get_user_by_telegram(user_event_dict['telegram_id'])
+        if user:
+            user_event_dict['user_id'] = user.id
+    elif 'user_id' not in user_event_dict and 'telegram_id' not in user_event_dict:
+        return False
+
+    if 'event_id' not in user_event_dict and 'post_id' in user_event_dict:
+        event = await crud.get_event_by_telegram(user_event_dict['post_id'])
+        if event:
+            user_event_dict['event_id'] = event.id
+
+    await crud.save_event_for_user(**user_event_dict)
+    return True
+
+
+async def get_saved_user_event_fast(telegram_id):
+    user_events = await crud.get_saved_user_event_by_teleram(telegram_id)
+    if user_events:
+        event_ids = [event.event_id for event in user_events]
+        saved_events = await crud.get_event_by_ids(event_ids)
+        message = build_event_message(saved_events)
+        return message
+
+
+async def get_saved_user_event(user_id=None, telegram_id=None):
+    if not user_id and telegram_id:
+        user = await crud.get_user_by_telegram(telegram_id)
+        if not user:
+            return None
+        user_id = user.id
+
+    user_events = await crud.get_saved_user_event(user_id)
+    if not user_events:
+        return None
+
+    event_ids = [event.event_id for event in user_events]
+    saved_events = await external_api.fetch_events({
+        'ids': event_ids,
+        'limit': 100
+    })
+
+    if saved_events['result']:
+        return build_event_message(saved_events['result']['events'], is_dict=True)
+
+
+async def referal_click(referal_telegram_id, user_telegram_id):
+    await crud.increase_balance(referal_telegram_id, 100)
+    await crud.increase_balance(user_telegram_id, 100)

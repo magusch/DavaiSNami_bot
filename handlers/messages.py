@@ -6,40 +6,45 @@ from datetime import datetime, timedelta, timezone
 from config import DATE_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
 from keyboards import show_menu
 
-from services.process import process_events
+from services import process
 import services.crud as crud
 import services.external_api as external_api
 
-async def handle_text(message: types.Message):
-    text = f"What'sup? *#{message.text}*"
-    await message.answer(text, parse_mode="Markdown", reply_markup=show_menu('events'))
-
-
-
-# Ваши команды в date_menu с использованием DATE_MENU из config.py
 date_menu = {
-    DATE_MENU['today']: lambda daynow: get_day(0, daynow),
-    DATE_MENU['tomorrow']: lambda daynow: get_day(1, daynow),
-    DATE_MENU['weekend']: lambda daynow: (get_weekday(5, daynow), get_weekday(6, daynow)),
-    #DATE_MENU['lucky']: lambda daynow: get_random_event(daynow),
-    #DATE_MENU['exhibitions']: find_exibitions,
-    DATE_MENU['weekday']: None  # если понадобится
+    MENU['events']['today']: lambda daynow: process.process_day_events(0, daynow),
+    MENU['events']['tomorrow']: lambda daynow: process.process_day_events(1, daynow),
+    MENU['events']['weekend']: lambda daynow: process.process_weekend_events(daynow),
+    MENU['events']['lucky']: lambda daynow: process.process_lucky_event(daynow),
+    MENU['events']['exhibitions']: lambda daynow: process.process_exhibitions(daynow),
+    #DATE_MENU['weekday']: lambda daynow: process.process_weekday_events(daynow.weekday(), daynow),
 }
 
 async def handle_message(message: types.Message):
-    if message.forward_date:
+    if message.successful_payment:
+        if message.successful_payment.invoice_payload == "balance_topup":
+            user_id = message.from_user.id
+            stars_amount = message.successful_payment.total_amount*10  # В Stars
+            # Обновите баланс пользователя в БД:
+            await crud.increase_balance(user_id, stars_amount)
+            await message.answer(f"Баланс пополнен на {stars_amount} ⭐️!")
+    elif message.forward_date:
+        await process_forwarded_event(message)
         if message.forward_from_chat.id == ID_CHANNEL:
             await process_forwarded_event(message)
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
     else:
-        message_lower = message.text.lower()
-        if message_lower in MENU['events'].values():
-            await handle_date_command(message_lower)
-        elif message_lower in MENU['settings'].keys():
-            await handle_setting(message_lower)
+        message_text = message.text.lower().capitalize()
+        if message_text in MENU['events'].values():
+            answer = await handle_date_command(message_text)
+            await message.reply(answer, parse_mode="Markdown",
+                                reply_markup=await show_menu('events'), disable_web_page_preview=True)
+        elif message_text in MENU['settings'].keys():
+            await handle_setting(message_text)
         else:
-            await handle_date_text(message)
+            answer = await handle_date_text(message_text)
+            await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
+                                disable_web_page_preview=True)
             
     user_monitor_dict = {
         'telegram_id': message.from_user.id,
@@ -54,27 +59,27 @@ async def handle_date_command(text_message):
 
     daynow = datetime.utcnow() + timedelta(hours=3)
 
-    # Получаем обработчик из date_menu по команде
     handler = date_menu.get(text_message)
-
     if handler:
+        answer = f"*{text_message.capitalize()}:*\n"
         if text_message == DATE_MENU['weekend']:
-            saturday_events, sunday_events = handler(daynow)
-
+            saturday_events, sunday_events = await handler(daynow)
             answer = f"_Выходные:_\n{saturday_events}\n{sunday_events}"
         else:
-            answer = handler(daynow) if text_message != DATE_MENU['lucky'] else handler(daynow)[0]
+            answer = answer + await handler(daynow)
+    else:
+        answer = 'Неверная команда'
 
     return answer
 
-async def handle_setting(message_lower):
+
+async def handle_setting(message_text):
     pass
 
-async def handle_date_text(message: types.Message):
-    message_text = message.text.lower()
+
+async def handle_date_text(message_text):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
-    
-    # Разбиваем сообщение на части, используя различные разделители
+
     parts = re.split(r'[.,\-/ ]', message_text)
     parts = [part for part in parts if part]  # Удаляем пустые строки
     
@@ -114,13 +119,13 @@ async def handle_date_text(message: types.Message):
         
         # Получаем события на указанную дату
         answer = f"События на {day} {MONTHES[LANG][month-1]} {year}:\n"
-        answer += await process_events(date_with_events)
+        answer += await process.process_events(date_with_events)
         # Здесь должен быть код для получения событий на указанную дату
         
     except (ValueError, IndexError):
         answer = "Не удалось распознать дату. Пожалуйста, укажите дату в формате 'ДД.ММ', 'ДД месяц' или просто 'ДД'."
-    
-    await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'), disable_web_page_preview=True)
+
+    return answer
 
 
 async def process_forwarded_event(message: types.Message):
@@ -130,9 +135,9 @@ async def process_forwarded_event(message: types.Message):
     Args:
         message (types.Message): The forwarded message from user
         """
-    event_post_id = message.forward_from_chat.id
+    event_post_id = message.forward_origin.message_id
     user_id = message.from_user.id
-    await crud.save_event_for_user(user_id, event_post_id)
+    await process.process_user_event({'telegram_id': user_id, 'post_id': event_post_id})
 
 
 async def process_forwarded_admin_message(message: types.Message):
@@ -151,6 +156,6 @@ async def process_forwarded_admin_message(message: types.Message):
         "forward_date": message.forward_date.isoformat() if message.forward_date else None,
     }
 
-    external_api.create_post_by_ai(post_data)
+    await external_api.create_post_by_ai(post_data)
 
     await message.reply("Пост отправлен на обработку!", reply_markup=await show_menu('events'))
