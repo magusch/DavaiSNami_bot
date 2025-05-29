@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  dsn-telegram-bot:
+    build: .
+    ports:
+      - "8089:8089"
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
