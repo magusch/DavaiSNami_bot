@@ -6,11 +6,13 @@ from aiogram import types
 from services.process import process_day_events, process_weekday_events, process_exhibitions, process_lucky_event, process_weekend_events
 from services import crud
 from services import process
-from config import MENU, CHANNEL_LINK
+from config import MENU, CHANNEL_LINK, BOT_LINK
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 async def process_menu_callback(callback_query: types.CallbackQuery):
-    message = await callback_query.message.edit_text('wait a minute...')
+    wait_message = await callback_query.message.edit_text('подождите чуток...')
     data = callback_query.data
 
     if data == 'weekday':
@@ -49,6 +51,7 @@ date_menu = {
     'weekday': lambda daynow: process_weekday_events(daynow.weekday(), daynow),
 }
 
+
 async def process_events_callback(callback_query: types.CallbackQuery):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     data_command = callback_query.data
@@ -58,21 +61,21 @@ async def process_events_callback(callback_query: types.CallbackQuery):
     if data_command == 'weekend':
         saturday_events, sunday_events = await handler(daynow)
         answer = f"{answer}{saturday_events}\n{sunday_events}"
-        await callback_query.message.reply(answer, parse_mode="Markdown",
+        await callback_query.message.edit_text(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'exhibitions':
         answer = answer + await handler(daynow)
-        await callback_query.message.reply(answer, parse_mode="Markdown",
+        await callback_query.message.edit_text(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'lucky':
         answer = answer + await handler(daynow)
-        await callback_query.message.reply(answer, parse_mode="Markdown",
+        await callback_query.message.edit_text(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'weekday':
         await callback_query.message.edit_text('Выберите день недели', reply_markup=await show_menu('weekday'))
     elif handler:
         answer = answer + await handler(daynow)
-        await callback_query.message.reply(answer, parse_mode="Markdown",
+        await callback_query.message.edit_text(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     else:
         await callback_query.message.reply('Неверная команда', reply_markup=await show_menu('events'))
@@ -88,6 +91,7 @@ async def process_weekday_callback(callback_query: types.CallbackQuery):
     answer = answer + await process_weekday_events(weekday, daynow)
     await callback_query.message.reply(answer, parse_mode="Markdown", disable_web_page_preview=True,
                                        reply_markup=await show_menu('weekday'))
+
 
 async def process_settings_callback(callback_query: types.CallbackQuery):
     data_command = callback_query.data
@@ -148,12 +152,22 @@ async def process_balance_callback(callback_query: types.CallbackQuery):
             need_shipping_address=False,
             is_flexible=False
         )
-    elif data_command == 'referal_url':
-        link = "https://t.me/your_bot?start=referral: " + str(callback_query.from_user.id)
+    elif data_command == 'referral_url':
+        link = f"https://t.me/{BOT_LINK}?start=referral-{str(callback_query.from_user.id)}"
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📋 Копировать ссылку", url=link)],
+                [InlineKeyboardButton(text="📤 Поделиться",
+                                      switch_inline_query=f"Присоединяйся к боту: {link}")],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="balance")]
+            ]
+        )
+
         await callback_query.message.edit_text(
-            'Пусть друзья зайдут по вашей ссылке и вы получите по 100 даснов:\n' + link,
-            parse_mode="Markdown",
-            reply_markup=await show_menu('balance')
+            f"Пусть друзья зайдут по вашей ссылке и вы получите по 100 звёзд:\n {link}",
+            parse_mode="HTML",
+            reply_markup=keyboard #await show_menu('referral_url')
         )
 
 
@@ -161,4 +175,9 @@ async def process_save_event(callback):
     event_id = int(callback.data.split(":")[1])
     user_event_dict = {'telegram_id': callback.from_user.id, 'event_id': event_id}
     return await process.process_user_event(user_event_dict)
+
+
+async def process_referral_start(callback):
+    referral_id = int(callback.data.split(':')[-1].strip())
+    return await process.referal_click(referral_id, callback.from_user.id)
 

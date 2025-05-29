@@ -7,50 +7,49 @@ from datetime import datetime, timedelta
 
 @db_session
 async def save_event_for_user(db, **saved_user_event):
-   user_event = SavedUserEvent(**saved_user_event)
-   db.add(user_event)
-   await db.commit()
+    user_event = SavedUserEvent(**saved_user_event)
+    db.add(user_event)
+    await db.commit()
 
 
 @db_session
 async def get_saved_user_event(db, user_id: int):
-    # get Event id from SavedUserEvent
-   result = await db.execute(
-      select(SavedUserEvent).filter(
-         SavedUserEvent.user_id == user_id
-      )
-   )
-   return result.scalars().all()
+    result = await db.execute(
+        select(SavedUserEvent).filter(
+            SavedUserEvent.user_id == user_id
+        )
+    )
+    return result.scalars().all()
 
 @db_session
 async def get_saved_user_event_by_teleram(db, telegram_id: int):
     # get Event id from SavedUserEvent
-   result = await db.execute(
-      select(SavedUserEvent).filter(
-         SavedUserEvent.telegram_id == telegram_id
-      )
-   )
-   return result.scalars().all()
+    result = await db.execute(
+        select(SavedUserEvent).filter(
+            SavedUserEvent.telegram_id == telegram_id
+        )
+    )
+    return result.scalars().all()
 
 
 @db_session
 async def get_remind_events(db, now):
-   result = await db.execute(
-      select(SavedUserEvent).filter(
-         SavedUserEvent.is_remind == True,
-         SavedUserEvent.event_date >= now + timedelta(hours=10),
-         SavedUserEvent.event_date < now
-      )
-   )
-   return result.scalars().all()
+    result = await db.execute(
+        select(SavedUserEvent).filter(
+            SavedUserEvent.is_remind == True,
+            SavedUserEvent.event_date >= now + timedelta(hours=10),
+            SavedUserEvent.event_date < now
+        )
+    )
+    return result.scalars().all()
 
 
 @db_session
 async def get_weekend_guide_users(db):
-   users = await db.execute(
-      select(User).filter(User.weekend_guide==1)
-   )
-   return users
+    users = await db.execute(
+        select(User).filter(User.weekend_guide==1)
+    )
+    return users
 
 
 @db_session
@@ -82,7 +81,7 @@ async def toggle_balance(db, telegram_id: int) -> bool:
 async def increase_balance(db, telegram_id: int, stars: int):
     user = await db.scalar(select(User).filter(User.telegram_id == telegram_id))
     if user:
-        user.balance += stars*10
+        user.balance += stars
         await db.commit()
         return user.balance
     return -1

@@ -29,47 +29,37 @@ async def process_command_handler(message: types.Message, command):
 
 
 async def start_command(message: types.Message, command):
+    await help_command(message)
     user = await crud.get_user_by_telegram(message.from_user.id)
     new_user = False
     if not user:
+        await process.new_user(message)
         new_user = True
-        await send_welcome(message)
 
     if command.args:
-        if "save:" in command.args:
+        if "save-" in command.args:
             event_id = command.args.split(':')[1].strip()
             if await process_user_event({'user_id': user.id, 'event_id': int(event_id), 'telegram_id': message.from_user.id}):
                 await message.answer(f"Пост сохранён! {command.args}")
-        elif 'referral:' in command.args: # and new_user
-            referal_id = int(command.args.split(":")[1].strip())
-            #await crud.add_referal(referal_id, command.from_user.id)
-            await process.referal_click(referal_id, command.from_user.id)
+        elif 'referral-' in command.args: # and new_user
+            referral_id = int(command.args.split("-")[1].strip())
+
+            await process.referal_click(referral_id, message.from_user.id)
             await message.answer("Вы успешно зарегистрировались по реферальной ссылке!")
-            await message.message.edit_text(
-            "Вы успешно зарегистрировались по реферальной ссылке!",
-            reply_markup=await show_menu('main')
-        )
-    else:
-        await help_command(message)
+            await help_command(message)
+    # else:
+    #     await help_command(message)
 
 
 async def send_welcome(message: types.Message):
     text = (f"Привет! Это бот канала {CHANNEL_LINK}. С моей помощью можно получить краткий гид мероприятий "
             "на определённый день, на выходные или по проходящим выставкам в городе.\n\n"
             "Чтобы начать, укажите дату или нажмите на кнопку в меню.")
-    user_id = message.from_user.id
     
     keyboard = await show_menu('events')
     
     await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
-    user_dict = {
-        'telegram_id': user_id,
-        'username': message.from_user.username,
-        'first_name': message.from_user.first_name,
-        'last_name': message.from_user.last_name,
-        'balance': 50
-    }
-    await crud.make_new_user(user_dict)
+    await process.new_user(message)
 
 
 async def help_command(message: types.Message):

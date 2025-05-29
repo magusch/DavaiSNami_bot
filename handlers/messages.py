@@ -3,7 +3,7 @@ import re
 from aiogram import types
 from datetime import datetime, timedelta, timezone
 
-from config import DATE_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
+from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
 from keyboards import show_menu
 
 from services import process
@@ -23,8 +23,7 @@ async def handle_message(message: types.Message):
     if message.successful_payment:
         if message.successful_payment.invoice_payload == "balance_topup":
             user_id = message.from_user.id
-            stars_amount = message.successful_payment.total_amount*10  # В Stars
-            # Обновите баланс пользователя в БД:
+            stars_amount = message.successful_payment.total_amount*10
             await crud.increase_balance(user_id, stars_amount)
             await message.answer(f"Баланс пополнен на {stars_amount} ⭐️!")
     elif message.forward_date:
@@ -34,18 +33,29 @@ async def handle_message(message: types.Message):
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
     else:
+        wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
         message_text = message.text.lower().capitalize()
-        if message_text in MENU['events'].values():
+        if message_text in [MENU['events']['weekday']]:
+            answer = MENU['events']['weekday']
+            await message.reply(answer, parse_mode="Markdown",
+                                reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
+        elif message_text in MENU['events'].values():
             answer = await handle_date_command(message_text)
             await message.reply(answer, parse_mode="Markdown",
                                 reply_markup=await show_menu('events'), disable_web_page_preview=True)
-        elif message_text in MENU['settings'].keys():
+        elif message_text in MENU['settings'].values():
             await handle_setting(message_text)
+            await message.answer("⚙ Настройки ", parse_mode="Markdown", reply_markup=await show_menu('settings'),
+                                 disable_web_page_preview=True)
+        elif message_text in MENU['weekday'].values():
+            answer = await handle_weekday_text(message_text)
+            await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
+                                disable_web_page_preview=True)
         else:
             answer = await handle_date_text(message_text)
             await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
                                 disable_web_page_preview=True)
-            
+        await wait_message.delete()
     user_monitor_dict = {
         'telegram_id': message.from_user.id,
         'telegram_info': f"{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})",
@@ -56,13 +66,11 @@ async def handle_message(message: types.Message):
 
 
 async def handle_date_command(text_message):
-
-    daynow = datetime.utcnow() + timedelta(hours=3)
-
+    daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     handler = date_menu.get(text_message)
     if handler:
         answer = f"*{text_message.capitalize()}:*\n"
-        if text_message == DATE_MENU['weekend']:
+        if text_message == MENU['events']['weekend']:
             saturday_events, sunday_events = await handler(daynow)
             answer = f"_Выходные:_\n{saturday_events}\n{sunday_events}"
         else:
@@ -125,6 +133,16 @@ async def handle_date_text(message_text):
     except (ValueError, IndexError):
         answer = "Не удалось распознать дату. Пожалуйста, укажите дату в формате 'ДД.ММ', 'ДД месяц' или просто 'ДД'."
 
+    return answer
+
+
+async def handle_weekday_text(message_text):
+    daynow = datetime.now(timezone.utc) + timedelta(hours=3)
+
+    weekday = WEEK_MENU[LANG].index(message_text.capitalize())
+
+    answer = f"_{message_text.capitalize()}:_\n"
+    answer += await process.process_weekday_events(weekday, daynow)
     return answer
 
 

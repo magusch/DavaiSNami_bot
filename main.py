@@ -41,10 +41,10 @@ async def save_post_callback(callback: CallbackQuery):
         await callback.answer("Пост не сохранён!", show_alert=True)
 
 
-@dp.callback_query(F.data.startswith("referal:"))
+@dp.callback_query(F.data.startswith("referral:"))
 async def save_post_callback(callback: CallbackQuery):
-    if await callbacks.process_referal_start(callback):
-        await callback.answer(f"Пост с event_id={callback.data.split(':')[-1]} сохранён!")
+    if await callbacks.process_referral_start(callback):
+        await callback.answer(f"Добро пожеловать, рефералка от юзера активирована")
     else:
         await callback.answer("Пост не сохранён!", show_alert=True)
 

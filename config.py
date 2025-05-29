@@ -8,6 +8,7 @@ URL = os.getenv('URL')
 ID_ADMIN = int(os.getenv('id_admin', 0))
 ID_CHANNEL = int(os.getenv('id_channel', 0))
 CHANNEL_LINK = os.getenv('channel_url', '@DavaiSNami')
+BOT_LINK = os.getenv('bot_url', 'channels_magusch_bot')
 
 DATABASE_URL = os.getenv('DATABASE_URL')
 LANG = os.getenv('language', 'ru')
@@ -28,39 +29,48 @@ DATE_MENU = {
 
 MENU = {
     'events': {
-        'today': 'Сегодня',
-        'tomorrow': 'Завтра',
-        'weekend':'Выходные',
+        'today':       'Сегодня',
+        'tomorrow':    'Завтра',
+        'weekend':     'Выходные',
         'exhibitions': 'Выставки',
-        'lucky': 'Мне повезёт',
-        'weekday' : 'День Недели',
-        'settings': '⚙ Настройки',
+        'lucky':       'Мне повезёт',
+        'weekday':     'День Недели',
+        'settings':    '⚙ Настройки',
     },
     'weekday': {
         'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
         'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вск', 'events': '⬅ Назад'
     },
     'city': {
-        'spb': 'Санкт-Петербург',
+        'spb':      'Санкт-Петербург',
         'settings': '⬅ Назад'
     },
     'settings': {
-        'events': '🧩 Мероприятия',
+        'events':           '🧩 Мероприятия',
        # '🏙 Выбор города': 'city',
-        'weekend_guide': '🌅 Гайд на выходные',
-        'saved_events': '⭐ Сохранённые Мероприятия',
-        #'reminders': 'Напоминания',
-        'balance': '💎 Баланс',
+        'weekend_guide':    '🌅 Гайд на выходные',
+        'saved_events':     '⭐ Сохранённые Мероприятия',
+        #'reminders':       'Напоминания',
+        'balance':          '💎 Баланс',
 
     },
     'balance': {
-        'balance_add': '💎 Пополнить Баланс',
-        'referal_url': ' Рефералка',
-        'settings': '⬅ Назад'
+        'balance_add':      '💎 Пополнить Баланс',
+        'referral_url':     '⭐ Рефералка',
+        'settings':         '⬅ Назад'
+    },
+    'referral_url': {
+        'copy_referral':    '📋 Копировать ссылку',
+        'share_referral':   '📤 Поделиться',
+        'balance':          '⬅ Назад',
     }
 }
 
-EXHIBITIONS_PHRASES = ['Скоро заканчиваются', 'Заканчиваются в следующем месяце', 'Остальные']
+EXHIBITIONS_PHRASES = {
+    'two_week':     'Скоро заканчиваются',
+    'next_month':   'Заканчиваются в следующем месяце',
+    'others':       'Остальные'
+}
 
 
 WEEK_MENU = {
@@ -69,6 +79,6 @@ WEEK_MENU = {
 }
 
 MONTHES = {
-    'ru': ['января', "февраля", 'марта', 'апреля', 'мая', 'июня','июля','августа','сентября','октября','ноября','декабря'],
+    'ru': ['января', "февраля", 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
     'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 }

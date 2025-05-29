@@ -49,7 +49,8 @@ async def process_events(date_from, date_to=None):
     params = {
         'date_from': date_from_str,
         'date_to': date_to_str,
-        'limit': 100
+        'limit': 100,
+        'category': [-11]
     }
     events = await external_api.fetch_events(params)
     
@@ -80,43 +81,63 @@ async def process_weekend_events(daynow):
 
 
 async def process_exhibitions(daynow):
-    exhibitions = await external_api.fetch_exhibitions()
-
-    date_list = get_list_dates(daynow)
+    params = {
+        'date_from': daynow.strftime('%Y-%m-%d'),
+        'limit': 100,
+        'category': [11],
+        'fields': ['title', 'post_url', 'price', 'to_date'],
+    }
+    exhibitions = await external_api.fetch_events(params)
+    divided_dates_dict = get_divided_dates_dict(daynow)
     message = ''
-    
-    # Проверяем, есть ли ошибка в ответе API
+
     if 'error' in exhibitions:
         return f"Ошибка при получении выставок: {exhibitions['error']}"
-    
-    if exhibitions.get('result'):
-        p = 0
-        message = f"{EXHIBITIONS_PHRASES[0]}:\n"
-        for exib in exhibitions['result']:
-            if datetime.strptime(exib['date_before'], '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc) > date_list[p]:
-                p += 1
-                message += f"\n{EXHIBITIONS_PHRASES[p]}:\n"
-            message = message +f"[{exib['title']}](https://t.me/{CHANNEL_LINK}/{exib['post_id']})\n"
+
+    if exhibitions.get('result', 'events'):
+        for exib in exhibitions['result']['events']:
+            to_date_exhib = datetime.strptime(exib['to_date'].split('+')[0], '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc)
+
+            for divided_date_key, divided_date_value in divided_dates_dict.items():
+                if to_date_exhib < divided_date_value['date']:
+
+                    title = exib['title']
+                    post_url = exib['post_url']
+                    price = exib['price']
+
+                    if post_url:
+                        if not post_url.startswith('http'):
+                            post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+
+                    divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price}")
+                    break
+
+        for type, value in divided_dates_dict.items():
+            exhib_message = '\n'.join(value['exhibs'])
+            message += f"*{EXHIBITIONS_PHRASES[type]}:*\n {exhib_message}\n\n"
+
     else:
         message = 'Выставок не найдено'
 
     return message
 
-def get_list_dates(daynow):
-    date_list = []
+
+def get_divided_dates_dict(daynow):
+    date_list = {}
     # 1) Ends in two week
-    date_list.append(daynow + timedelta(weeks=2))
+    exhib_phrases = list(EXHIBITIONS_PHRASES.keys())
+    date_list[exhib_phrases[0]] = {'date': daynow + timedelta(weeks=2), 'exhibs': []}
 
     # 2) Ends in next month
     if daynow.month < 11:
-        date_list.append(daynow.replace(month=daynow.month+2, day=1) - timedelta(days=1))
+        date_list[exhib_phrases[1]] = {'date': daynow.replace(month=daynow.month+2, day=1) - timedelta(days=1), 'exhibs': []}
     elif daynow.month == 11:
-        date_list.append(daynow.replace(month=12, day=31))
+        date_list[exhib_phrases[1]] = {'date': daynow.replace(month=12, day=31), 'exhibs': []}
     else:
-        date_list.append(daynow.replace(year=daynow.year+1, month=1, day=31))
+        date_list[exhib_phrases[1]] = {'date': daynow.replace(year=daynow.year+1, month=1, day=31), 'exhibs': []}
 
     # 3) Others
-    date_list.append(daynow.replace(year=daynow.year+10))
+    date_list[exhib_phrases[2]] = {'date': daynow.replace(year=daynow.year+10), 'exhibs': []}
     
     return date_list
 
@@ -124,8 +145,9 @@ def get_list_dates(daynow):
 async def process_lucky_event(daynow):
     params = {
         'date_from': daynow.strftime('%Y-%m-%d'),
-        'date_to': (daynow + timedelta(days=1)).strftime('%Y-%m-%d'),
-        'limit': 100
+        'date_to': (daynow + timedelta(days=7)).strftime('%Y-%m-%d'),
+        'limit': 100,
+        'category': [-11]
     }
     events = await external_api.fetch_events(params)
 
@@ -187,6 +209,17 @@ async def get_saved_user_event(user_id=None, telegram_id=None):
         return build_event_message(saved_events['result']['events'], is_dict=True)
 
 
-async def referal_click(referal_telegram_id, user_telegram_id):
-    await crud.increase_balance(referal_telegram_id, 100)
+async def new_user(message):
+    user_dict = {
+        'telegram_id': message.from_user.id,
+        'username': message.from_user.username,
+        'first_name': message.from_user.first_name,
+        'last_name': message.from_user.last_name,
+        'balance': 50
+    }
+    await crud.make_new_user(user_dict)
+
+
+async def referal_click(referral_telegram_id, user_telegram_id):
     await crud.increase_balance(user_telegram_id, 100)
+    await crud.increase_balance(referral_telegram_id, 100)
