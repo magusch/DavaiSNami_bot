@@ -78,7 +78,7 @@ async def toggle_balance(db, telegram_id: int) -> bool:
 
 
 @db_session
-async def increase_balance(db, telegram_id: int, stars: int):
+async def change_balance(db, telegram_id: int, stars: int):
     user = await db.scalar(select(User).filter(User.telegram_id == telegram_id))
     if user:
         user.balance += stars

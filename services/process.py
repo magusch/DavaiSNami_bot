@@ -30,6 +30,9 @@ def build_event_message(events, is_dict=False):
             if not post_url.startswith('http'):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
             lines.append(f"[{title}]({post_url}) – {price}")
+        else:
+            webapp_link = f"https://t.me/{CHANNEL_LINK}?startapp=event_{event['id']}"
+            lines.append(f"[{title} <П>]({webapp_link}) – {price}")
     return '\n'.join(lines)
 
 async def process_events(date_from, date_to=None):
@@ -55,8 +58,7 @@ async def process_events(date_from, date_to=None):
     events = await external_api.fetch_events(params)
     
     message = date_to_markdown(date_from)
-
-    if events['result']:
+    if events.get('result', {}).get('events'):
         message += build_event_message(events['result']['events'], is_dict=True)
     else:
         message = 'Мероприятий не найдено'
@@ -94,16 +96,16 @@ async def process_exhibitions(daynow):
     if 'error' in exhibitions:
         return f"Ошибка при получении выставок: {exhibitions['error']}"
 
-    if exhibitions.get('result', 'events'):
-        for exib in exhibitions['result']['events']:
-            to_date_exhib = datetime.strptime(exib['to_date'].split('+')[0], '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc)
+    if exhibitions.get('result', {}).get('events'):
+        for exhib in exhibitions['result']['events']:
+            to_date_exhib = datetime.strptime(exhib['to_date'].split('+')[0], '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc)
 
             for divided_date_key, divided_date_value in divided_dates_dict.items():
                 if to_date_exhib < divided_date_value['date']:
 
-                    title = exib['title']
-                    post_url = exib['post_url']
-                    price = exib['price']
+                    title = exhib['title']
+                    post_url = exhib['post_url']
+                    price = exhib['price']
 
                     if post_url:
                         if not post_url.startswith('http'):
@@ -220,6 +222,6 @@ async def new_user(message):
     await crud.make_new_user(user_dict)
 
 
-async def referal_click(referral_telegram_id, user_telegram_id):
-    await crud.increase_balance(user_telegram_id, 100)
-    await crud.increase_balance(referral_telegram_id, 100)
+async def referral_click(referral_telegram_id, user_telegram_id):
+    await crud.change_balance(user_telegram_id, 100)
+    await crud.change_balance(referral_telegram_id, 100)

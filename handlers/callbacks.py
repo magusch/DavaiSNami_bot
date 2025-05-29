@@ -12,35 +12,38 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 async def process_menu_callback(callback_query: types.CallbackQuery):
-    wait_message = await callback_query.message.edit_text('подождите чуток...')
+    wait_message = await callback_query.message.edit_text('подождите чуток...', reply_markup=await show_menu('back'))
     data = callback_query.data
-
+    telegram_user_id = callback_query.from_user.id
     if data == 'weekday':
-        await callback_query.message.edit_text('Выберите день недели', reply_markup=await show_menu('weekday'))
+        await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
     elif data == 'events':
-        await callback_query.message.edit_text('Когда?', reply_markup=await show_menu('events'))
+        await callback_query.message.answer('Когда?', reply_markup=await show_menu('events'))
     elif data == 'settings':
-        await callback_query.message.edit_text('Настройки', reply_markup=await show_menu('settings'))
+        await callback_query.message.answer('Настройки', reply_markup=await show_menu('settings'))
     elif data in MENU['settings'].keys():
         await process_settings_callback(callback_query)
     elif data in MENU['events'].keys():
-        await process_events_callback(callback_query)
+        not_minus_balance = await process_events_callback(callback_query)
+        if not not_minus_balance:
+            await crud.change_balance(telegram_user_id, -2)
     elif data in MENU['weekday'].keys():
-        await process_weekday_callback(callback_query)
+        not_minus_balance = await process_weekday_callback(callback_query)
+        if not not_minus_balance:
+            await crud.change_balance(telegram_user_id, -2)
     elif data in MENU['balance'].keys():
         await process_balance_callback(callback_query)
     else:
         callback_message = f'{data} не найдено, обратитесь к разработчику! \n\n/start'
         await callback_query.message.answer(callback_message, reply_markup=await show_menu('events'))
-
+    await wait_message.delete()
     user_monitor_dict = {
-        'telegram_id': callback_query.from_user.id,
+        'telegram_id': telegram_user_id,
         'telegram_info': f"{callback_query.from_user.username} ({callback_query.from_user.first_name} {callback_query.from_user.last_name})",
         'message': data,
         'type': 'data'
     }
     await crud.create_telegram_monitor(user_monitor_dict)
-    #await message.delete()
 
 date_menu = {
     'today': lambda daynow: process_day_events(0, daynow),
@@ -61,24 +64,30 @@ async def process_events_callback(callback_query: types.CallbackQuery):
     if data_command == 'weekend':
         saturday_events, sunday_events = await handler(daynow)
         answer = f"{answer}{saturday_events}\n{sunday_events}"
-        await callback_query.message.edit_text(answer, parse_mode="Markdown",
+        await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'exhibitions':
         answer = answer + await handler(daynow)
-        await callback_query.message.edit_text(answer, parse_mode="Markdown",
+        await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'lucky':
         answer = answer + await handler(daynow)
-        await callback_query.message.edit_text(answer, parse_mode="Markdown",
+        await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
+        return 1
     elif data_command == 'weekday':
-        await callback_query.message.edit_text('Выберите день недели', reply_markup=await show_menu('weekday'))
+        await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
+        return 1
     elif handler:
-        answer = answer + await handler(daynow)
-        await callback_query.message.edit_text(answer, parse_mode="Markdown",
+        result_text = await handler(daynow)
+        answer = answer + result_text
+        await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
+        if 'не найдено' in result_text or result_text.strip=='':
+            return 1
     else:
-        await callback_query.message.reply('Неверная команда', reply_markup=await show_menu('events'))
+        await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
+        return 1
 
 
 async def process_weekday_callback(callback_query: types.CallbackQuery):
@@ -88,25 +97,29 @@ async def process_weekday_callback(callback_query: types.CallbackQuery):
     weekday = list(MENU['weekday'].keys()).index(data_command)
 
     answer = f"_{MENU['weekday'][data_command]}:_\n"
-    answer = answer + await process_weekday_events(weekday, daynow)
+    result_text = await process_weekday_events(weekday, daynow)
+    answer = answer + result_text
     await callback_query.message.reply(answer, parse_mode="Markdown", disable_web_page_preview=True,
                                        reply_markup=await show_menu('weekday'))
+
+    if 'не найдено' in result_text or result_text.strip == '':
+        return 1
 
 
 async def process_settings_callback(callback_query: types.CallbackQuery):
     data_command = callback_query.data
     if data_command == 'city':
-        await callback_query.message.edit_text('Выберите город', reply_markup=await show_menu('city'))
+        await callback_query.message.answer('Выберите город', reply_markup=await show_menu('city'))
     elif data_command == 'weekend_guide':
         is_enabled = await crud.toggle_weekend_guide(callback_query.from_user.id)
         status = "включен" if is_enabled else "выключен"
-        await callback_query.message.edit_text(
+        await callback_query.message.answer(
             f'Гайд на выходные {status}', parse_mode="Markdown",
             reply_markup=await show_menu('settings')
         )
     elif data_command == 'balance':
         balance = await crud.toggle_balance(callback_query.from_user.id)
-        await callback_query.message.edit_text(
+        await callback_query.message.answer(
             f'Баланс: {balance}', parse_mode="Markdown",
             reply_markup=await show_menu('balance')
         )
@@ -123,9 +136,10 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
     elif data_command == 'saved_events':
 
         saved_events_fast = await process.get_saved_user_event_fast(callback_query.from_user.id)
+        answer_message = None
         if saved_events_fast:
-            answer_fast = f"Ваши сохранённые события:\n{saved_events_fast}"
-            await callback_query.message.edit_text(answer_fast, parse_mode="Markdown", disable_web_page_preview=True,
+            answer_fast = f"Ваши сохранённые события:\n{saved_events_fast}\n(Дозагрузка..)"
+            answer_message = await callback_query.message.answer(answer_fast, parse_mode="Markdown", disable_web_page_preview=True,
                                                    reply_markup=await show_menu('settings'))
 
         saved_events = await process.get_saved_user_event(telegram_id=callback_query.from_user.id)
@@ -133,8 +147,12 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
             answer = f"Ваши сохранённые события:\n{saved_events}"
         else:
             answer = f"У вас нет сохранённых событий. Пересылайте события из канала {CHANNEL_LINK}"
-        await callback_query.message.edit_text(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                               reply_markup=await show_menu('settings'))
+        if answer_message:
+            await answer_message.edit_text(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                            reply_markup=await show_menu('settings'))
+        else:
+            await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                            reply_markup=await show_menu('settings'))
 
 
 async def process_balance_callback(callback_query: types.CallbackQuery):
@@ -164,7 +182,7 @@ async def process_balance_callback(callback_query: types.CallbackQuery):
             ]
         )
 
-        await callback_query.message.edit_text(
+        await callback_query.message.answer(
             f"Пусть друзья зайдут по вашей ссылке и вы получите по 100 звёзд:\n {link}",
             parse_mode="HTML",
             reply_markup=keyboard #await show_menu('referral_url')
@@ -179,5 +197,5 @@ async def process_save_event(callback):
 
 async def process_referral_start(callback):
     referral_id = int(callback.data.split(':')[-1].strip())
-    return await process.referal_click(referral_id, callback.from_user.id)
+    return await process.referral_click(referral_id, callback.from_user.id)
 

@@ -24,7 +24,7 @@ async def handle_message(message: types.Message):
         if message.successful_payment.invoice_payload == "balance_topup":
             user_id = message.from_user.id
             stars_amount = message.successful_payment.total_amount*10
-            await crud.increase_balance(user_id, stars_amount)
+            await crud.change_balance(user_id, stars_amount)
             await message.answer(f"Баланс пополнен на {stars_amount} ⭐️!")
     elif message.forward_date:
         await process_forwarded_event(message)
@@ -55,6 +55,10 @@ async def handle_message(message: types.Message):
             answer = await handle_date_text(message_text)
             await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
                                 disable_web_page_preview=True)
+
+            if 'не найдено' not in answer:
+                await crud.change_balance(message.from_user.id, -2)
+
         await wait_message.delete()
     user_monitor_dict = {
         'telegram_id': message.from_user.id,

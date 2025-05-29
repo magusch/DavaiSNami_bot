@@ -63,6 +63,9 @@ MENU = {
         'copy_referral':    '📋 Копировать ссылку',
         'share_referral':   '📤 Поделиться',
         'balance':          '⬅ Назад',
+    },
+    'back': {
+        'events':           '🧩 Вернуть меню назад'
     }
 }
 

@@ -59,7 +59,10 @@ async def process_menu_callback(callback_query: types.CallbackQuery) -> None:
 
 async def main() -> None:
     bot = Bot(token=config.TOKEN)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
