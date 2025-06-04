@@ -3,7 +3,7 @@ import random
 from . import external_api
 from . import crud
 
-from config import CHANNEL_LINK, EXHIBITIONS_PHRASES, MONTHES
+from config import CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES
 
 
 def get_day(offset, daynow):
@@ -31,7 +31,7 @@ def build_event_message(events, is_dict=False):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
             lines.append(f"[{title}]({post_url}) – {price}")
         else:
-            webapp_link = f"https://t.me/{CHANNEL_LINK}?startapp=event_{event['id']}"
+            webapp_link = f"https://t.me/{BOT_LINK}?startapp=event_{event['id']}"
             lines.append(f"[{title} <П>]({webapp_link}) – {price}")
     return '\n'.join(lines)
 
