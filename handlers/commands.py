@@ -38,13 +38,13 @@ async def start_command(message: types.Message, command):
 
     if command.args:
         if "save-" in command.args:
-            event_id = command.args.split(':')[1].strip()
+            event_id = command.args.split('-')[1].strip()
             if await process_user_event({'user_id': user.id, 'event_id': int(event_id), 'telegram_id': message.from_user.id}):
                 await message.answer(f"Пост сохранён! {command.args}")
-        elif 'referral-' in command.args: # and new_user
+        elif 'referral-' in command.args:  # and new_user
             referral_id = int(command.args.split("-")[1].strip())
 
-            await process.referal_click(referral_id, message.from_user.id)
+            await process.referral_click(referral_id, message.from_user.id)
             await message.answer("Вы успешно зарегистрировались по реферальной ссылке!")
             await help_command(message)
     # else:
