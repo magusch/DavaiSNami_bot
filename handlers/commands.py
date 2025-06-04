@@ -46,7 +46,6 @@ async def start_command(message: types.Message, command):
 
             await process.referral_click(referral_id, message.from_user.id)
             await message.answer("Вы успешно зарегистрировались по реферальной ссылке!")
-            await help_command(message)
     # else:
     #     await help_command(message)
 

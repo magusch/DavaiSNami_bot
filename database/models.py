@@ -44,7 +44,7 @@ class SavedUserEvent(Base):
     event_title = Column(DateTime)
     event_date = Column(DateTime)
     event_id = Column(Integer, ForeignKey('events_events2post.id'))
-    is_remind = Column(Boolean, default=False)
+    remind_sent = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
 
 
