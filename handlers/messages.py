@@ -28,9 +28,16 @@ async def handle_message(message: types.Message):
             await crud.change_balance(user_id, stars_amount)
             await message.answer(f"Баланс пополнен на {stars_amount} ⭐️!")
     elif message.forward_date:
-        await process_forwarded_event(message)
         if message.forward_from_chat.id == ID_CHANNEL:
-            await process_forwarded_event(message)
+            if await process_forwarded_event(message):
+                answer = "Мероприятие успешно сохранено! Также было запланировано напоминание! " \
+                         "Отредактировать напоминание можно в настройках."
+            else:
+                answer = "Мероприятие не добавлено! Возможно это не мероприятие или оно истекло. " \
+                         "Если это не так напишите в поддержку"
+
+            await message.answer(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
+                                 disable_web_page_preview=True)
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
     elif message.from_user.id in waiting_for_time:
@@ -59,7 +66,7 @@ async def handle_message(message: types.Message):
                                 reply_markup=await show_menu('events'), disable_web_page_preview=True)
         elif message_text in MENU['settings'].values():
             await handle_setting(message_text)
-            await message.answer("⚙ Настройки ", parse_mode="Markdown", reply_markup=await show_menu('settings'),
+            await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
                                  disable_web_page_preview=True)
         elif message_text in MENU['weekday'].values():
             answer = await handle_weekday_text(message_text)

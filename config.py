@@ -35,7 +35,7 @@ MENU = {
         'exhibitions': 'Выставки',
         'lucky':       'Мне повезёт',
         'weekday':     'День Недели',
-        'settings':    '⚙ Настройки',
+        'settings':    '⚙️ Настройки',
     },
     'weekday': {
         'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
