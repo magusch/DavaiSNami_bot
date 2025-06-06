@@ -4,6 +4,8 @@ from . import external_api
 from . import crud
 
 from config import CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES
+from keyboards import user_event_menu
+from . import utils
 
 
 def get_day(offset, daynow):
@@ -175,14 +177,16 @@ async def process_user_event(user_event_dict):
     if 'event_id' not in user_event_dict and 'post_id' in user_event_dict:
         event = await crud.get_event_by_telegram(user_event_dict['post_id'])
         if event:
-            user_event_dict['event_id'] = event.id
-
+            user_event_dict.update({
+                'event_id': event.id, 'event_date': event.from_date, 'event_title': event.title,
+                'remind_datetime': event.from_date - timedelta(hours=5)
+            })
     await crud.save_event_for_user(**user_event_dict)
     return True
 
 
 async def get_saved_user_event_fast(telegram_id):
-    user_events = await crud.get_saved_user_event_by_teleram(telegram_id)
+    user_events = await crud.get_saved_user_event_by_telegram(telegram_id)
     if user_events:
         event_ids = [event.event_id for event in user_events]
         saved_events = await crud.get_event_by_ids(event_ids)
@@ -190,25 +194,74 @@ async def get_saved_user_event_fast(telegram_id):
         return message
 
 
-async def get_saved_user_event(user_id=None, telegram_id=None):
+async def process_saved_user_event(user_id=None, telegram_id=None, old=0):
     if not user_id and telegram_id:
         user = await crud.get_user_by_telegram(telegram_id)
         if not user:
             return None
         user_id = user.id
 
-    user_events = await crud.get_saved_user_event(user_id)
+    user_events = await crud.get_saved_user_event(user_id, old)
     if not user_events:
         return None
 
-    event_ids = [event.event_id for event in user_events]
+    user_event_ids = {event.event_id: event for event in user_events}
     saved_events = await external_api.fetch_events({
-        'ids': event_ids,
+        'ids': list(user_event_ids.keys()),
         'limit': 100
     })
 
+    event_for_menu = []
     if saved_events['result']:
-        return build_event_message(saved_events['result']['events'], is_dict=True)
+        lines = []
+        for idx, event in enumerate(saved_events['result']['events'], start=1):
+            remind_date = user_event_ids[event['id']].remind_datetime
+            if remind_date and not user_event_ids[event['id']].remind_sent:
+                remind_date_str = f"{remind_date.day} {MONTHES['ru'][remind_date.month - 1]} {remind_date.strftime('%H:%M')}"
+            else:
+                remind_date_str = 'отключено'
+            event_date = datetime.fromisoformat(event['from_date'])
+            event_date_str = f"{event_date.day} {MONTHES['ru'][event_date.month - 1]} {event_date.strftime('%H:%M')}"
+
+            lines.append(
+                f"{idx}. *{event['title']}* — {event_date_str} \n    *Напоминание:* {remind_date_str} \n"
+            )
+            event_for_menu.append({
+                'id': event['id'], 'remind_datetime': remind_date
+            })
+
+        message_menu = await user_event_menu(event_for_menu)
+        return "Ваши мероприятия:\n" + "\n".join(lines), message_menu
+
+
+        #return build_event_message(saved_events['result']['events'], is_dict=True)
+
+async def toggle_saved_event(telegram_id, event_id, mod):
+    user = await crud.get_user_by_telegram(telegram_id)
+    if not user:
+        return None
+    user_id = user.id
+
+    if mod == 'dis':
+        await crud.toggle_remind_events(user_id, event_id, 0)
+        return 0
+    elif mod == 'del':
+        await crud.toggle_remind_events(user_id, event_id, -1)
+        return -1
+
+
+async def edit_remind_time(telegram_id, event_id, message_text):
+    user = await crud.get_user_by_telegram(telegram_id)
+    if not user:
+        return None
+    user_id = user.id
+
+    # parse time
+    remind_dt = utils.parse_user_datetime(message_text)
+    if remind_dt is not None:
+        await crud.edit_time_reminder(user_id, event_id, remind_dt)
+    return remind_dt
+
 
 
 async def new_user(message):

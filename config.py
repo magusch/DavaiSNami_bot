@@ -85,3 +85,5 @@ MONTHES = {
     'ru': ['января', "февраля", 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
     'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 }
+
+waiting_for_time = {}

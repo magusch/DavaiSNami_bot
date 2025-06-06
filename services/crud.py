@@ -13,20 +13,32 @@ async def save_event_for_user(db, **saved_user_event):
 
 
 @db_session
-async def get_saved_user_event(db, user_id: int):
-    result = await db.execute(
-        select(SavedUserEvent).filter(
-            SavedUserEvent.user_id == user_id
+async def get_saved_user_event(db, user_id: int, old: int = 0):
+    if old == 0:
+        result = await db.execute(
+            select(SavedUserEvent).filter(
+                SavedUserEvent.user_id == user_id,
+                SavedUserEvent.remind_sent == False
+            )
         )
-    )
+    else:
+        result = await db.execute(
+            select(SavedUserEvent).filter(
+                SavedUserEvent.user_id == user_id,
+                SavedUserEvent.remind_sent == True
+            )
+        )
+
+
     return result.scalars().all()
 
 @db_session
-async def get_saved_user_event_by_teleram(db, telegram_id: int):
+async def get_saved_user_event_by_telegram(db, telegram_id: int):
     # get Event id from SavedUserEvent
     result = await db.execute(
         select(SavedUserEvent).filter(
-            SavedUserEvent.telegram_id == telegram_id
+            SavedUserEvent.telegram_id == telegram_id,
+            SavedUserEvent.remind_sent == False
         )
     )
     return result.scalars().all()
@@ -42,6 +54,35 @@ async def get_remind_events(db, now):
         )
     )
     return result.scalars().all()
+
+
+@db_session
+async def toggle_remind_events(db, user_id, event_id, opt):
+    user_event = \
+        await db.scalar(select(SavedUserEvent).filter(
+            SavedUserEvent.user_id == user_id,
+            SavedUserEvent.event_id == int(event_id)
+        ))
+    if user_event:
+        if opt == 0:
+            user_event.remind_datetime = None
+        elif opt == -1:
+            await db.delete(user_event)
+
+        await db.commit()
+
+
+@db_session
+async def edit_time_reminder(db, user_id, event_id, remind_datetime):
+    user_event = \
+        await db.scalar(select(SavedUserEvent).filter(
+            SavedUserEvent.user_id == user_id,
+            SavedUserEvent.event_id == int(event_id)
+        ))
+
+    if user_event:
+        user_event.remind_datetime = remind_datetime
+        await db.commit()
 
 
 @db_session

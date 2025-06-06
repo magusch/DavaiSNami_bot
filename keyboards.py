@@ -51,4 +51,23 @@ async def week_menu():
     return markup
 
 
+async def user_event_menu(saved_events):
+    inline_keyboard = []
+
+    for idx, event in enumerate(saved_events, start=1):
+        inline_keyboard.append(
+            [
+                InlineKeyboardButton(text=f"⚙️ Изменить {idx}", callback_data=f"sevent_edit_{event['id']}"),
+                InlineKeyboardButton(
+                    text=f"💤 Отключить {idx}" if event['remind_datetime'] else f"✅ Включить {idx}",
+                    callback_data=f"sevent_dis_{event['id']}" if event['remind_datetime'] else f"sevent_enbl_{event['id']}"),
+                InlineKeyboardButton(text=f"❌ Удалить {idx}", callback_data=f"sevent_del_{event['id']}"),
+            ]
+        )
+    inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="settings"),
+                            InlineKeyboardButton(text="🦋 Мероприятия в истории", callback_data="saved_events_old")])
+
+    markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+    return markup
+
 

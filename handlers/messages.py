@@ -3,7 +3,7 @@ import re
 from aiogram import types
 from datetime import datetime, timedelta, timezone
 
-from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
+from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL, waiting_for_time
 from keyboards import show_menu
 
 from services import process
@@ -19,6 +19,7 @@ date_menu = {
     #DATE_MENU['weekday']: lambda daynow: process.process_weekday_events(daynow.weekday(), daynow),
 }
 
+
 async def handle_message(message: types.Message):
     if message.successful_payment:
         if message.successful_payment.invoice_payload == "balance_topup":
@@ -32,6 +33,19 @@ async def handle_message(message: types.Message):
             await process_forwarded_event(message)
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
+    elif message.from_user.id in waiting_for_time:
+        await handle_time_for_event(message)
+
+        saved_events, sevent_menu = await process.process_saved_user_event(telegram_id=message.from_user.id)
+
+        if saved_events:
+            answer = saved_events
+        else:
+            answer = f"У вас нет сохранённых событий. Пересылайте события из канала"
+
+        await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                                reply_markup=sevent_menu)
+
     else:
         wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
         message_text = message.text.lower().capitalize()
@@ -159,7 +173,7 @@ async def process_forwarded_event(message: types.Message):
         """
     event_post_id = message.forward_origin.message_id
     user_id = message.from_user.id
-    await process.process_user_event({'telegram_id': user_id, 'post_id': event_post_id})
+    return await process.process_user_event({'telegram_id': user_id, 'post_id': event_post_id})
 
 
 async def process_forwarded_admin_message(message: types.Message):
@@ -181,3 +195,13 @@ async def process_forwarded_admin_message(message: types.Message):
     await external_api.create_post_by_ai(post_data)
 
     await message.reply("Пост отправлен на обработку!", reply_markup=await show_menu('events'))
+
+
+async def handle_time_for_event(message):
+    telegram_id = message.from_user.id
+    event_id = waiting_for_time.pop(telegram_id)
+    remind_datetime = await process.edit_remind_time(telegram_id, event_id, message.text)
+    if remind_datetime:
+        await message.reply(f"Поставлено новое время для напоминания о мероприятии: {remind_datetime}")
+    else:
+        await message.reply(f"Ошибка с определением времени, напоминалка не установлена.")

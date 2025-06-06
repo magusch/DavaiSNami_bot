@@ -41,10 +41,11 @@ class SavedUserEvent(Base):
     user = relationship('User', back_populates='events')
     telegram_id = Column(Integer)
     post_id = Column(Integer)
-    event_title = Column(DateTime)
-    event_date = Column(DateTime)
+    event_title = Column(String)
+    event_date = Column(DateTime(timezone=True))
     event_id = Column(Integer, ForeignKey('events_events2post.id'))
     remind_sent = Column(Boolean, default=False)
+    remind_datetime = Column(DateTime(timezone=True), default=None)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -55,3 +56,4 @@ class Events2Post(Base):
     prepared_text = Column(String)
     post_url = Column(String)
     price = Column(String)
+    from_date = Column(DateTime(timezone=True))

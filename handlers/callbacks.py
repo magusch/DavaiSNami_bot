@@ -6,7 +6,7 @@ from aiogram import types
 from services.process import process_day_events, process_weekday_events, process_exhibitions, process_lucky_event, process_weekend_events
 from services import crud
 from services import process
-from config import MENU, CHANNEL_LINK, BOT_LINK
+from config import MENU, CHANNEL_LINK, BOT_LINK, waiting_for_time
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -26,7 +26,7 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
         await callback_query.message.answer('Когда?', reply_markup=await show_menu('events'))
     elif data == 'settings':
         await callback_query.message.answer('Настройки', reply_markup=await show_menu('settings'))
-    elif data in MENU['settings'].keys():
+    elif data in MENU['settings'].keys() or data in ['saved_events_old']:
         await process_settings_callback(callback_query)
     elif data in MENU['events'].keys():
         not_minus_balance = await process_events_callback(callback_query)
@@ -38,6 +38,9 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
             await crud.change_balance(telegram_user_id, -2)
     elif data in MENU['balance'].keys():
         await process_balance_callback(callback_query)
+    elif data.startswith('sevent_'):
+        if await process_saved_events(callback_query):
+            await process_settings_callback(callback_query)
     else:
         callback_message = f'{data} не найдено, обратитесь к разработчику! \n\n/start'
         await callback_query.message.answer(callback_message, reply_markup=await show_menu('events'))
@@ -138,7 +141,7 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
             }
             await crud.make_new_user(user_dict)
 
-    elif data_command == 'saved_events':
+    elif data_command == 'saved_events' or data_command.startswith('sevent_'):
 
         saved_events_fast = await process.get_saved_user_event_fast(callback_query.from_user.id)
         answer_message = None
@@ -147,17 +150,26 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
             answer_message = await callback_query.message.answer(answer_fast, parse_mode="Markdown", disable_web_page_preview=True,
                                                    reply_markup=await show_menu('settings'))
 
-        saved_events = await process.get_saved_user_event(telegram_id=callback_query.from_user.id)
+        saved_events, sevent_menu = await process.process_saved_user_event(telegram_id=callback_query.from_user.id)
         if saved_events:
-            answer = f"Ваши сохранённые события:\n{saved_events}"
+            answer = saved_events
         else:
             answer = f"У вас нет сохранённых событий. Пересылайте события из канала {CHANNEL_LINK}"
         if answer_message:
             await answer_message.edit_text(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                            reply_markup=await show_menu('settings'))
+                                            reply_markup=sevent_menu)
         else:
             await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                            reply_markup=await show_menu('settings'))
+                                            reply_markup=sevent_menu)
+    elif data_command == 'saved_events_old':
+        saved_events, sevent_menu = await process.process_saved_user_event(telegram_id=callback_query.from_user.id, old=1)
+        if saved_events:
+            answer = saved_events
+        else:
+            answer = f"У вас нет сохранённых событий в истории. Пересылайте события из канала {CHANNEL_LINK}"
+
+        await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                            reply_markup=sevent_menu)
 
 
 async def process_balance_callback(callback_query: types.CallbackQuery):
@@ -204,3 +216,23 @@ async def process_referral_start(callback):
     referral_id = int(callback.data.split(':')[-1].strip())
     return await process.referral_click(referral_id, callback.from_user.id)
 
+
+async def process_saved_events(callback_query):
+    callback_data = callback_query.data
+    telegram_id = callback_query.from_user.id
+    _, mod, event_id = callback_data.split('_')
+    if mod in ['edit', 'enbl']:
+        waiting_for_time[telegram_id] = event_id
+        await callback_query.message.answer(
+            f'Введите время для напоминания о мероприятии:', parse_mode="Markdown")
+    elif mod in ['dis', 'del']:
+        answer = await process.toggle_saved_event(telegram_id, event_id, mod)
+        if answer == 0:
+            answer = f'Напоминание отключено'
+        elif answer == -1:
+            answer = f'Ваше мероприятие удалено из списка сохраненных'
+        else:
+            answer = f'Произошла ошибка с доступом, попробуйте попозже'
+
+        await callback_query.message.answer(answer, parse_mode="Markdown")
+        return 1
