@@ -12,8 +12,13 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 async def process_menu_callback(callback_query: types.CallbackQuery):
-    wait_message = await callback_query.message.edit_text('подождите чуток...', reply_markup=await show_menu('back'))
     data = callback_query.data
+    wait_text = 'подождите чуток...'
+    if data.startswith('sevent_') or wait_text == callback_query.message.text:
+        wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
+    else:
+        wait_message = await callback_query.message.edit_text(wait_text, reply_markup=await show_menu('back'))
+
     telegram_user_id = callback_query.from_user.id
     if data == 'weekday':
         await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
