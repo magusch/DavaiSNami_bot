@@ -149,27 +149,10 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
             answer_fast = f"Ваши сохранённые события:\n{saved_events_fast}\n(Дозагрузка..)"
             answer_message = await callback_query.message.answer(answer_fast, parse_mode="Markdown", disable_web_page_preview=True,
                                                    reply_markup=await show_menu('settings'))
+        await process_message_saved_event(callback_query, answer_message=answer_message, old=0)
 
-        saved_events, sevent_menu = await process.process_saved_user_event(telegram_id=callback_query.from_user.id)
-        if saved_events:
-            answer = saved_events
-        else:
-            answer = f"У вас нет сохранённых событий. Пересылайте события из канала {CHANNEL_LINK}"
-        if answer_message:
-            await answer_message.edit_text(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                            reply_markup=sevent_menu)
-        else:
-            await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                            reply_markup=sevent_menu)
     elif data_command == 'saved_events_old':
-        saved_events, sevent_menu = await process.process_saved_user_event(telegram_id=callback_query.from_user.id, old=1)
-        if saved_events:
-            answer = saved_events
-        else:
-            answer = f"У вас нет сохранённых событий в истории. Пересылайте события из канала {CHANNEL_LINK}"
-
-        await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                            reply_markup=sevent_menu)
+        await process_message_saved_event(callback_query, old=1)
 
 
 async def process_balance_callback(callback_query: types.CallbackQuery):
@@ -236,3 +219,26 @@ async def process_saved_events(callback_query):
 
         await callback_query.message.answer(answer, parse_mode="Markdown")
         return 1
+
+
+async def process_message_saved_event(callback_query, answer_message=None, old=0):
+    result = await process.process_saved_user_event(telegram_id=callback_query.from_user.id, old=old)
+    if result is not None:
+        answer, sevent_menu = result
+    else:
+        if old==0:
+            answer = f"У вас нет сохранённых событий. Пересылайте события из канала {CHANNEL_LINK}"
+        else:
+            answer = f"У вас нет сохранённых событий в истории."
+        sevent_menu = None
+
+    if sevent_menu:
+        if answer_message:
+            await answer_message.edit_text(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                           reply_markup=sevent_menu)
+        else:
+            await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                                reply_markup=sevent_menu)
+    else:
+        await callback_query.message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                            reply_markup=await show_menu('settings'))

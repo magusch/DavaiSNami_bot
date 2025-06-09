@@ -216,10 +216,11 @@ async def process_saved_user_event(user_id=None, telegram_id=None, old=0):
         lines = []
         for idx, event in enumerate(saved_events['result']['events'], start=1):
             remind_date = user_event_ids[event['id']].remind_datetime
-            if remind_date and not user_event_ids[event['id']].remind_sent:
+            if remind_date and not user_event_ids[event['id']].remind_sent and old == 0:
                 remind_date_str = f"{remind_date.day} {MONTHES['ru'][remind_date.month - 1]} {remind_date.strftime('%H:%M')}"
             else:
                 remind_date_str = 'отключено'
+                remind_date = None
             event_date = datetime.fromisoformat(event['from_date'])
             event_date_str = f"{event_date.day} {MONTHES['ru'][event_date.month - 1]} {event_date.strftime('%H:%M')}"
 

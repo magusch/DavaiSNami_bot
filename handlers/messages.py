@@ -43,15 +43,20 @@ async def handle_message(message: types.Message):
     elif message.from_user.id in waiting_for_time:
         await handle_time_for_event(message)
 
-        saved_events, sevent_menu = await process.process_saved_user_event(telegram_id=message.from_user.id)
+        result = await process.process_saved_user_event(telegram_id=message.from_user.id)
 
-        if saved_events:
-            answer = saved_events
+        if result is not None:
+            answer, sevent_menu = result
         else:
             answer = f"У вас нет сохранённых событий. Пересылайте события из канала"
+            sevent_menu = None
 
-        await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                                reply_markup=sevent_menu)
+        if sevent_menu:
+            await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                 reply_markup=sevent_menu)
+        else:
+            await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                                 reply_markup=await show_menu('settings'))
 
     else:
         wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
