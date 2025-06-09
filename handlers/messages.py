@@ -21,12 +21,17 @@ date_menu = {
 
 
 async def handle_message(message: types.Message):
+    message_text = message.text
     if message.successful_payment:
         if message.successful_payment.invoice_payload == "balance_topup":
             user_id = message.from_user.id
             stars_amount = message.successful_payment.total_amount*10
             await crud.change_balance(user_id, stars_amount)
             await message.answer(f"Баланс пополнен на {stars_amount} ⭐️!")
+            if message_text is None:
+                message_text = ''
+            message_text += f"; Баланс пополнен на {stars_amount} ⭐️!"
+
     elif message.forward_date:
         if message.forward_from_chat.id == ID_CHANNEL:
             if await process_forwarded_event(message):
@@ -60,7 +65,7 @@ async def handle_message(message: types.Message):
 
     else:
         wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
-        message_text = message.text.lower().capitalize()
+        message_text = message_text.lower().capitalize()
         if message_text in [MENU['events']['weekday']]:
             answer = MENU['events']['weekday']
             await message.reply(answer, parse_mode="Markdown",
@@ -89,7 +94,7 @@ async def handle_message(message: types.Message):
     user_monitor_dict = {
         'telegram_id': message.from_user.id,
         'telegram_info': f"{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})",
-        'message': message.text,
+        'message': message_text,
         'type': 'message'
     }
     await crud.create_telegram_monitor(user_monitor_dict)

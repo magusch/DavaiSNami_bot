@@ -14,7 +14,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 async def process_menu_callback(callback_query: types.CallbackQuery):
     data = callback_query.data
     wait_text = 'подождите чуток...'
-    if data.startswith('sevent_') or wait_text == callback_query.message.text:
+    if data.startswith('sevent_') or wait_text == callback_query.message.text or data in ['balance']:
         wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
     else:
         wait_message = await callback_query.message.edit_text(wait_text, reply_markup=await show_menu('back'))
@@ -163,12 +163,16 @@ async def process_balance_callback(callback_query: types.CallbackQuery):
             description="Пополни баланс через Telegram Stars",
             payload="balance_topup",
             currency="XTR",
-            prices=[types.LabeledPrice(label="1 звёзд", amount=1)],  # 100 Stars
+            prices=[types.LabeledPrice(label="10 звёзд", amount=10)],
             need_name=False,
             need_phone_number=False,
             need_email=False,
             need_shipping_address=False,
-            is_flexible=False
+            is_flexible=False,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🌟 Пополнить", pay=True),
+                 InlineKeyboardButton(text="◀️ Назад", callback_data="balance")]
+            ]),
         )
     elif data_command == 'referral_url':
         link = f"https://t.me/{BOT_LINK}?start=referral-{str(callback_query.from_user.id)}"
