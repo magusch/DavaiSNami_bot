@@ -82,6 +82,7 @@ async def edit_time_reminder(db, user_id, event_id, remind_datetime):
 
     if user_event:
         user_event.remind_datetime = remind_datetime
+        user_event.remind_sent = False
         await db.commit()
 
 

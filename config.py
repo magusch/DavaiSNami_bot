@@ -10,6 +10,8 @@ ID_CHANNEL = int(os.getenv('id_channel', 0))
 CHANNEL_LINK = os.getenv('channel_url', '@DavaiSNami')
 BOT_LINK = os.getenv('bot_url', 'DavaiSNamiBot')
 
+TIMEZONE_HOUR = int(os.getenv('TIMEZONE', 3))
+
 DATABASE_URL = os.getenv('DATABASE_URL')
 LANG = os.getenv('language', 'ru')
 

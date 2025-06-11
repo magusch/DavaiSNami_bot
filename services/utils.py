@@ -1,7 +1,9 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from config import MONTHES, LANG
+from config import MONTHES, LANG, TIMEZONE_HOUR
+
+USER_TZ = timezone(timedelta(hours=TIMEZONE_HOUR))
 
 
 def parse_user_datetime(text):
@@ -47,7 +49,7 @@ def parse_user_datetime(text):
                 if not month:
                     return None
                 year = now.year
-                dt = datetime(year, month, int(day), int(hour), int(minute))
+                dt = datetime(year, month + 1, int(day), int(hour), int(minute))
             # 05.06 (without time)
             elif dt_format == "%d.%m":
                 day, month = groups
@@ -60,4 +62,14 @@ def parse_user_datetime(text):
                 if not (dt_format and "%Y" in dt_format):
                     dt = dt.replace(year=dt.year + 1)
             return dt
+
+
+def dt_local_to_utc(local_dt) -> datetime:
+    local_dt = local_dt.replace(tzinfo=USER_TZ)
+    utc_dt = local_dt.astimezone(timezone.utc)
+    return utc_dt
+
+
+def dt_utc_to_user(utc_dt: datetime) -> str:
+    return utc_dt.astimezone(USER_TZ)
 

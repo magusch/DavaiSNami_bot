@@ -217,22 +217,27 @@ async def process_saved_user_event(user_id=None, telegram_id=None, old=0):
         for idx, event in enumerate(saved_events['result']['events'], start=1):
             remind_date = user_event_ids[event['id']].remind_datetime
             if remind_date and not user_event_ids[event['id']].remind_sent and old == 0:
+                remind_date = utils.dt_utc_to_user(remind_date)
                 remind_date_str = f"{remind_date.day} {MONTHES['ru'][remind_date.month - 1]} {remind_date.strftime('%H:%M')}"
             else:
                 remind_date_str = 'отключено'
                 remind_date = None
-            event_date = datetime.fromisoformat(event['from_date'])
+            event_date = utils.dt_utc_to_user(datetime.fromisoformat(event['from_date']))
             event_date_str = f"{event_date.day} {MONTHES['ru'][event_date.month - 1]} {event_date.strftime('%H:%M')}"
 
+            if event['post_url']:
+                if not event['post_url'].startswith('http'):
+                    event['post_url'] = f'https://t.me/{CHANNEL_LINK}/' + event['post_url']
+
             lines.append(
-                f"{idx}. *{event['title']}* — {event_date_str} \n    *Напоминание:* {remind_date_str} \n"
+                f"{idx}. [{event['title']}]({event['post_url']}) — {event_date_str} \n    *Напоминание:* {remind_date_str} \n"
             )
             event_for_menu.append({
                 'id': event['id'], 'remind_datetime': remind_date
             })
 
         message_menu = await user_event_menu(event_for_menu)
-        return "Ваши мероприятия:\n" + "\n".join(lines), message_menu
+        return "*Ваши мероприятия:*\n\n" + "\n".join(lines), message_menu
 
 
         #return build_event_message(saved_events['result']['events'], is_dict=True)
@@ -260,7 +265,7 @@ async def edit_remind_time(telegram_id, event_id, message_text):
     # parse time
     remind_dt = utils.parse_user_datetime(message_text)
     if remind_dt is not None:
-        await crud.edit_time_reminder(user_id, event_id, remind_dt)
+        await crud.edit_time_reminder(user_id, event_id, utils.dt_local_to_utc(remind_dt))
     return remind_dt
 
 
