@@ -3,7 +3,7 @@ import random
 from . import external_api
 from . import crud
 
-from config import CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES
+from config import CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES, WEEK_MENU
 from keyboards import user_event_menu
 from . import utils
 
@@ -18,11 +18,12 @@ def get_weekday(offset, daynow):
     return daynow + timedelta(days=weekday_offset)
 
 def date_to_markdown(date):
-    return f"*{date.day} {MONTHES['ru'][date.month-1]}*\n"
+    return f"*{WEEK_MENU['ru'][date.weekday()]}, {date.day} {MONTHES['ru'][date.month-1]}*\n"
 
 
 def build_event_message(events, is_dict=False):
     lines = []
+    cnt_events = 0
     for event in events:
         title = event['title'] if is_dict else event.title
         post_url = event['post_url'] if is_dict else event.post_url
@@ -32,10 +33,17 @@ def build_event_message(events, is_dict=False):
             if not post_url.startswith('http'):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
             lines.append(f"[{title}]({post_url}) – {price}")
+            cnt_events += 1
         else:
-            webapp_link = f"https://t.me/{BOT_LINK}?startapp=event_{event['id']}"
+            event_id = event['id'] if is_dict else event.id
+            webapp_link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
             lines.append(f"[{title} <П>]({webapp_link}) – {price}")
-    return '\n'.join(lines)
+            cnt_events += 1
+    if cnt_events > 1:
+        return '\n'.join(lines) + '\n'
+    else:
+        return 'Мероприятий не найдено\n'
+
 
 async def process_events(date_from, date_to=None):
     if type(date_from) != str:
@@ -117,6 +125,9 @@ async def process_exhibitions(daynow):
                     break
 
         for type, value in divided_dates_dict.items():
+            if not value['exhibs']:
+                continue
+
             exhib_message = '\n'.join(value['exhibs'])
             message += f"*{EXHIBITIONS_PHRASES[type]}:*\n {exhib_message}\n\n"
 
