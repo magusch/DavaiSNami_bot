@@ -179,16 +179,15 @@ async def process_balance_callback(callback_query: types.CallbackQuery):
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📋 Копировать ссылку", url=link)],
                 [InlineKeyboardButton(text="📤 Поделиться",
-                                      switch_inline_query=f"Присоединяйся к боту: {link}")],
+                                      switch_inline_query=f"Попробуй гид-бот по поиску мероприятий: {link}. Давай с нами!")],
                 [InlineKeyboardButton(text="◀️ Назад", callback_data="balance")]
             ]
         )
 
         await callback_query.message.answer(
-            f"Пусть друзья зайдут по вашей ссылке и вы получите по 100 звёзд:\n {link}",
-            parse_mode="HTML",
+            f"Пусть друзья зайдут по вашей ссылке и вы получите по 100 звёзд:\n `{link}` \n\(щёлкни по ссылке чтобы скопировать\)",
+            parse_mode="MarkdownV2",
             reply_markup=keyboard #await show_menu('referral_url')
         )
 
