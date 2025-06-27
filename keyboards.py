@@ -1,6 +1,5 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from config import MENU, LANG
-
+from config import MENU, LANG, emoji_keyboard
 
 
 async def show_menu_keyboard(menu_key="events"):
@@ -33,7 +32,10 @@ async def show_menu(menu_key="events"):
         row = []
         items = list(menu_items)[i:i+2]
         for callback_data, text in items:
-            row.append(InlineKeyboardButton(text=text.capitalize(), callback_data=callback_data))
+            button_message = text.capitalize()
+            if callback_data in emoji_keyboard and 'назад' not in button_message:
+                button_message = emoji_keyboard[callback_data] + ' ' + button_message
+            row.append(InlineKeyboardButton(text=button_message, callback_data=callback_data))
         inline_keyboard.append(row)
 
     markup = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)

@@ -19,15 +19,6 @@ API_URL = os.getenv('API_URL')
 API_TOKEN = os.getenv('API_TOKEN')
 
 
-DATE_MENU = {
-    'today': 'сегодня',
-    'tomorrow': 'завтра',
-    'weekend': 'выходные',
-    'exhibitions': 'выставки',
-    'lucky': 'мне повезёт',
-    'weekday': 'день недели',
-}
-
 
 MENU = {
     'events': {
@@ -37,7 +28,7 @@ MENU = {
         'exhibitions': 'Выставки',
         'lucky':       'Мне повезёт',
         'weekday':     'День Недели',
-        'settings':    '⚙️ Настройки',
+        'settings':    'Настройки',
     },
     'weekday': {
         'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
@@ -48,7 +39,7 @@ MENU = {
         'settings': '⬅ Назад'
     },
     'settings': {
-        'events':           '🧩 Мероприятия',
+        'events':           'Мероприятия',
        # '🏙 Выбор города': 'city',
         'weekend_guide':    '🌅 Гайд на выходные',
         'saved_events':     '⭐ Сохранённые Мероприятия',
@@ -67,7 +58,7 @@ MENU = {
         'balance':          '⬅ Назад',
     },
     'back': {
-        'events':           '🧩 Вернуть меню назад'
+        'events':           'Вернуть меню назад'
     }
 }
 
@@ -86,6 +77,19 @@ WEEK_MENU = {
 MONTHES = {
     'ru': ['января', "февраля", 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
     'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+}
+
+
+emoji_keyboard = {
+    # General events menu
+    'today':       '🔥',          'tomorrow':    '🦜',
+    'weekend':     '🏄‍♂️',        'exhibitions': '🎨',
+    'lucky':       '🍀',          'weekday':     '🌍',
+    'settings':    '⚙️',          'events':      '🧩',
+
+    # Week day menu
+    'Mon': '😴',   'Tue': '📈',   'Wed': '🐪',   'Thr': '🚀',
+    'Fri': '🎉',   'Sat': '🥝',   'Sun': '☀️',
 }
 
 waiting_for_time = {}
