@@ -99,7 +99,7 @@ async def process_exhibitions(daynow):
         'date_from': daynow.strftime('%Y-%m-%d'),
         'limit': 100,
         'category': [11],
-        'fields': ['title', 'post_url', 'price', 'to_date'],
+        'fields': ['id', 'title', 'post_url', 'price', 'to_date'],
     }
     exhibitions = await external_api.fetch_events(params)
     divided_dates_dict = get_divided_dates_dict(daynow)
