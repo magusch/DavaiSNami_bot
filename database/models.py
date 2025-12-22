@@ -6,46 +6,13 @@ from datetime import datetime
 
 Base = declarative_base()
 
-
-class User(Base):
-    __tablename__ = 'bot_user'
-    id = Column(Integer, primary_key=True)
-    telegram_id = Column(BigInteger, unique=True)
-    username = Column(String)
-    first_name = Column(String)
-    last_name = Column(String)
-    is_admin = Column(Boolean, default=False)
-    balance = Column(Integer, default=50)
-    weekend_guide = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.now)
-    events = relationship('SavedUserEvent', back_populates='user')
-    monitor = relationship('TelegramMonitor', back_populates='user')
-
-
 class TelegramMonitor(Base):
     __tablename__ = 'bot_telegram_monitor'
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger)
-    user_id = Column(Integer, ForeignKey('bot_user.id'))
-    user = relationship('User', back_populates='monitor')
     telegram_info = Column(String)
     message = Column(String)
     type = Column(String)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class SavedUserEvent(Base):
-    __tablename__ = 'bot_user_events'
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('bot_user.id'))
-    user = relationship('User', back_populates='events')
-    telegram_id = Column(Integer)
-    post_id = Column(Integer)
-    event_title = Column(String)
-    event_date = Column(DateTime(timezone=True))
-    event_id = Column(Integer, ForeignKey('events_events2post.id'))
-    remind_sent = Column(Boolean, default=False)
-    remind_datetime = Column(DateTime(timezone=True), default=None)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -57,3 +24,35 @@ class Events2Post(Base):
     post_url = Column(String)
     price = Column(String)
     from_date = Column(DateTime(timezone=True))
+    #dsn_user_events = relationship("DsnUserEvent", back_populates="event")
+
+
+class DsnUser(Base):
+    __tablename__ = "dsn_user"
+
+    id = Column(Integer, primary_key=True)
+    nickname = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    telegram_id = Column(Integer, nullable=True, index=True)
+    balance = Column(Integer, default=100, nullable=True)
+    weekend_guide = Column(Boolean, default=False, nullable=True)
+
+    full_name = Column(String, nullable=True)
+
+    dsn_user_events = relationship("DsnUserEvent", back_populates="user")
+
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+
+
+class DsnUserEvent(Base):
+    __tablename__ = 'dsn_user_event'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('dsn_user.id'), index=True)
+    event_id = Column(Integer, ForeignKey('events_events2post.id'), index=True)
+    remind_datetime = Column(DateTime(timezone=True), default=None, nullable=True)
+    remind_sent = Column(Boolean, nullable=True)
+
+    user = relationship("DsnUser", back_populates="dsn_user_events")
+    #event = relationship("Events2Posts", back_populates="dsn_user_events")

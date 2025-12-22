@@ -47,7 +47,6 @@ async def handle_message(message: types.Message):
             await process_forwarded_admin_message(message)
     elif message.from_user.id in waiting_for_time:
         await handle_time_for_event(message)
-
         result = await process.process_saved_user_event(telegram_id=message.from_user.id)
 
         if result is not None:
@@ -219,6 +218,6 @@ async def handle_time_for_event(message):
     event_id = waiting_for_time.pop(telegram_id)
     remind_datetime = await process.edit_remind_time(telegram_id, event_id, message.text)
     if remind_datetime:
-        await message.reply(f"Поставлено новое время для напоминания о мероприятии: {remind_datetime}")
+        await message.reply(f"Установлено напоминание: {remind_datetime}")
     else:
         await message.reply(f"Ошибка с определением времени, напоминалка не установлена.")

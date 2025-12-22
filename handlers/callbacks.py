@@ -14,7 +14,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 async def process_menu_callback(callback_query: types.CallbackQuery):
     data = callback_query.data
     wait_text = 'подождите чуток...'
-    if data.startswith('sevent_') or wait_text == callback_query.message.text or data in ['balance']:
+    if wait_text == callback_query.message.text or data in ['balance']:
         wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
     else:
         wait_message = await callback_query.message.edit_text(wait_text, reply_markup=await show_menu('back'))
@@ -132,24 +132,10 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
             reply_markup=await show_menu('balance')
         )
         if balance < 0:
-            user_dict = {
-                'telegram_id': callback_query.from_user.id,
-                'username': callback_query.from_user.username,
-                'first_name': callback_query.from_user.first_name,
-                'last_name': callback_query.from_user.last_name,
-                'balance': 100
-            }
-            await crud.make_new_user(user_dict)
+            await process.new_user(callback_query)
 
     elif data_command == 'saved_events' or data_command.startswith('sevent_'):
-
-        saved_events_fast = await process.get_saved_user_event_fast(callback_query.from_user.id)
-        answer_message = None
-        if saved_events_fast:
-            answer_fast = f"Ваши сохранённые события:\n{saved_events_fast}\n(Дозагрузка..)"
-            answer_message = await callback_query.message.answer(answer_fast, parse_mode="Markdown", disable_web_page_preview=True,
-                                                   reply_markup=await show_menu('settings'))
-        await process_message_saved_event(callback_query, answer_message=answer_message, old=0)
+        await process_message_saved_event(callback_query, answer_message=None, old=0)
 
     elif data_command == 'saved_events_old':
         await process_message_saved_event(callback_query, old=1)
@@ -210,7 +196,9 @@ async def process_saved_events(callback_query):
     if mod in ['edit', 'enbl']:
         waiting_for_time[telegram_id] = event_id
         await callback_query.message.answer(
-            f'Введите время для напоминания о мероприятии:', parse_mode="Markdown")
+            f'Введите дату и время для напоминания:', parse_mode="Markdown",
+            reply_markup=await show_menu('cancel_saved_events')
+        )
     elif mod in ['dis', 'del']:
         answer = await process.toggle_saved_event(telegram_id, event_id, mod)
         if answer == 0:

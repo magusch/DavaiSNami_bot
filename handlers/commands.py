@@ -43,9 +43,11 @@ async def start_command(message: types.Message, command):
                 await message.answer(f"Пост сохранён! {command.args}")
         elif 'referral-' in command.args:  # and new_user
             referral_id = int(command.args.split("-")[1].strip())
-
-            await process.referral_click(referral_id, message.from_user.id)
-            await message.answer("Вы успешно зарегистрировались по реферальной ссылке!")
+            if new_user:
+                await process.referral_click(referral_id, message.from_user.id)
+                await message.answer("Вы успешно зарегистрировались по реферальной ссылке!")
+            else:
+                await message.answer("Вы уже были зарегистрированы!")
     # else:
     #     await help_command(message)
 
@@ -71,7 +73,7 @@ async def help_command(message: types.Message):
 async def paysupport_command(message: types.Message):
     await message.answer(
         "💸 *Вопросы по оплате*\n\n"
-        "Если у вас возникли проблемы с оплатой или Stars, напишите нам: @magusch\n"
+        "Если у вас возникли проблемы с оплатой или Stars, можете написать нам: @magusch\n"
         "Мы поможем вам в кратчайшие сроки!",
         parse_mode="Markdown", reply_markup=await show_menu('settings')
     )

@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import random
+import secrets
+
 from . import external_api
 from . import crud
 
@@ -39,7 +41,7 @@ def build_event_message(events, is_dict=False):
             webapp_link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
             lines.append(f"[{title} <П>]({webapp_link}) – {price}")
             cnt_events += 1
-    if cnt_events > 1:
+    if cnt_events > 0:
         return '\n'.join(lines) + '\n'
     else:
         return 'Мероприятий не найдено\n'
@@ -120,6 +122,9 @@ async def process_exhibitions(daynow):
                     if post_url:
                         if not post_url.startswith('http'):
                             post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+                    else:
+                        exhib_id = exhib['id']
+                        post_url = f"https://t.me/{BOT_LINK}?startapp=event_{exhib_id}"
 
                     divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price}")
                     break
@@ -165,7 +170,6 @@ async def process_lucky_event(daynow):
         'category': [-11]
     }
     events = await external_api.fetch_events(params)
-
     message = ''
     if events['result']:
         event = random.choice(events['result']['events'])
@@ -189,20 +193,16 @@ async def process_user_event(user_event_dict):
         event = await crud.get_event_by_telegram(user_event_dict['post_id'])
         if event:
             user_event_dict.update({
-                'event_id': event.id, 'event_date': event.from_date, 'event_title': event.title,
+                'event_id': event.id,
                 'remind_datetime': event.from_date - timedelta(hours=5)
             })
-    await crud.save_event_for_user(**user_event_dict)
+    user_event_to_db = {
+        'user_id': user_event_dict['user_id'],
+        'event_id': user_event_dict['event_id'],
+        'remind_datetime': user_event_dict.get('remind_datetime')
+    }
+    await crud.save_event_for_user(**user_event_to_db)
     return True
-
-
-async def get_saved_user_event_fast(telegram_id):
-    user_events = await crud.get_saved_user_event_by_telegram(telegram_id)
-    if user_events:
-        event_ids = [event.event_id for event in user_events]
-        saved_events = await crud.get_event_by_ids(event_ids)
-        message = build_event_message(saved_events)
-        return message
 
 
 async def process_saved_user_event(user_id=None, telegram_id=None, old=0):
@@ -272,7 +272,6 @@ async def edit_remind_time(telegram_id, event_id, message_text):
     if not user:
         return None
     user_id = user.id
-
     # parse time
     remind_dt = utils.parse_user_datetime(message_text)
     if remind_dt is not None:
@@ -280,16 +279,28 @@ async def edit_remind_time(telegram_id, event_id, message_text):
     return remind_dt
 
 
-
 async def new_user(message):
-    user_dict = {
+    full_name = ''
+    if message.from_user.first_name:
+        full_name += message.from_user.first_name + ' '
+    if message.from_user.last_name:
+        full_name += message.from_user.last_name
+    nickname = 'tg_' + str(message.from_user.id)
+    if message.from_user.username:
+        nickname = 'tg_' + message.from_user.username
+
+    hashed_password = secrets.token_urlsafe(32)
+
+    new_user_dict = {
         'telegram_id': message.from_user.id,
-        'username': message.from_user.username,
-        'first_name': message.from_user.first_name,
-        'last_name': message.from_user.last_name,
-        'balance': 50
+        'full_name': full_name,
+        'nickname': nickname,
+        'email': f"{message.from_user.id}@tg.me",
+        'is_active': True,
+        'balance': 100,
+        'hashed_password': hashed_password
     }
-    await crud.make_new_user(user_dict)
+    await crud.make_new_user(new_user_dict)
 
 
 async def referral_click(referral_telegram_id, user_telegram_id):
