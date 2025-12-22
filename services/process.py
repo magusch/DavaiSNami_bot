@@ -196,6 +196,8 @@ async def process_user_event(user_event_dict):
                 'event_id': event.id,
                 'remind_datetime': event.from_date - timedelta(hours=5)
             })
+        else:
+            return False
     user_event_to_db = {
         'user_id': user_event_dict['user_id'],
         'event_id': user_event_dict['event_id'],

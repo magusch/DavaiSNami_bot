@@ -5,6 +5,16 @@ from sqlalchemy import select, or_
 
 @db_session
 async def save_event_for_user(db, **saved_user_event):
+    result = await db.execute(
+        select(DsnUserEvent).filter(
+            DsnUserEvent.user_id  == saved_user_event['user_id'],
+            DsnUserEvent.event_id == saved_user_event['event_id'],
+        ))
+    existing_event = result.scalar_one_or_none()
+
+    if existing_event:
+        return existing_event.__dict__
+
     user_event = DsnUserEvent(**saved_user_event)
     db.add(user_event)
     await db.commit()

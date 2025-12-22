@@ -22,14 +22,13 @@ async def process_command_handler(message: types.Message, command):
     user_monitor_dict = {
         'telegram_id': message.from_user.id,
         'telegram_info': f"{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})",
-        'message': command.command,
+        'message': f"{command.command}" + (f" {command.args}" if command.args else ""),
         'type': 'command'
     }
     await crud.create_telegram_monitor(user_monitor_dict)
 
 
 async def start_command(message: types.Message, command):
-    await help_command(message)
     user = await crud.get_user_by_telegram(message.from_user.id)
     new_user = False
     if not user:
@@ -48,8 +47,8 @@ async def start_command(message: types.Message, command):
                 await message.answer("Вы успешно зарегистрировались по реферальной ссылке!")
             else:
                 await message.answer("Вы уже были зарегистрированы!")
-    # else:
-    #     await help_command(message)
+    else:
+        await help_command(message)
 
 
 async def send_welcome(message: types.Message):
