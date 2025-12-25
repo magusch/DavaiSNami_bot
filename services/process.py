@@ -20,8 +20,13 @@ def get_weekday(offset, daynow):
         weekday_offset += 7
     return daynow + timedelta(days=weekday_offset)
 
+
 def date_to_markdown(date):
-    return f"*{WEEK_MENU['ru'][date.weekday()]}, {date.day} {MONTHES['ru'][date.month-1]}*\n"
+    if date is None:
+        return ""
+    if type(date) == str:
+        date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%S%z')
+    return f"*{WEEK_MENU['ru'][date.weekday()]}, {date.day} {MONTHES['ru'][date.month-1]}*"
 
 
 def build_event_message(events, is_dict=False):
@@ -73,12 +78,13 @@ async def process_events(date_from, date_to=None):
         'category': [-11]
     }
     events = await external_api.fetch_events(params)
-    
-    message = date_to_markdown(date_from)
+
     if events.get('result', {}).get('events'):
+        message = date_to_markdown(date_from) + '\n'
         message += build_event_message(events['result']['events'], is_dict=True)
     else:
-        message = 'Мероприятий не найдено'
+        message = f'Мероприятий на {date_to_markdown(date_from)} не найдено\n\nНо может вам понравится это:\n'
+        message += await process_lucky_event()
 
     return message
 
@@ -104,7 +110,7 @@ async def process_exhibitions(daynow):
         'date_from': daynow.strftime('%Y-%m-%d'),
         'limit': 100,
         'category': [11],
-        'fields': ['id', 'title', 'post_url', 'price', 'to_date'],
+        'fields': ['id', 'title', 'post_url', 'price', 'to_date', 'address', 'place'],
     }
     exhibitions = await external_api.fetch_events(params)
     divided_dates_dict = get_divided_dates_dict(daynow)
@@ -123,7 +129,7 @@ async def process_exhibitions(daynow):
                     title = exhib['title']
                     post_url = exhib['post_url']
                     price = exhib['price']
-
+                    place_name = exhib['address'].split(',')[0]
                     if post_url:
                         if not post_url.startswith('http'):
                             post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
@@ -131,7 +137,10 @@ async def process_exhibitions(daynow):
                         exhib_id = exhib['id']
                         post_url = f"https://t.me/{BOT_LINK}?startapp=event_{exhib_id}"
 
-                    divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price}")
+                    if exhib.get('place'):
+                        place_name = exhib.get('place').get('place_name')
+
+                    divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price} – {place_name}")
                     break
 
         for type, value in divided_dates_dict.items():
@@ -140,7 +149,6 @@ async def process_exhibitions(daynow):
 
             exhib_message = '\n'.join(value['exhibs'])
             message += f"*{EXHIBITIONS_PHRASES[type]}:*\n {exhib_message}\n\n"
-
     else:
         message = 'Выставок не найдено'
 
@@ -167,7 +175,7 @@ def get_divided_dates_dict(daynow):
     return date_list
 
 
-async def process_lucky_event(daynow):
+async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hours=3)):
     params = {
         'date_from': daynow.strftime('%Y-%m-%d'),
         'date_to': (daynow + timedelta(days=7)).strftime('%Y-%m-%d'),
@@ -178,7 +186,24 @@ async def process_lucky_event(daynow):
     message = ''
     if events['result']:
         event = random.choice(events['result']['events'])
-        message += build_event_message([event], is_dict=True)
+        post_url = event['post_url']
+        if post_url:
+            if not post_url.startswith('http'):
+                post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+        else:
+            post_url = f"https://t.me/{BOT_LINK}?startapp=event_{event['id']}"
+        event_address = event['address']
+        if event.get('place'):
+            event_address = event['place']['place_name']
+            if event.get('place').get('place_metro'):
+                event_address += ', м.' + event['place']['place_metro']
+
+        message =  f" [{event['title']}]({post_url}) – {event['category']}\n"
+        message += f" 📆 {date_to_markdown(event['from_date'])}\n"
+        message += f" 📍 {event_address}\n"
+        message += f" 💰 {event['price']}\n"
+
+
     return message
 
 
