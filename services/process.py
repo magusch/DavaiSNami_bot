@@ -13,6 +13,7 @@ from . import utils
 def get_day(offset, daynow):
     return daynow + timedelta(days=offset)
 
+
 def get_weekday(offset, daynow):
     weekday_offset = offset - daynow.weekday()
     if weekday_offset < 0:
@@ -45,6 +46,10 @@ def build_event_message(events, is_dict=False):
         return '\n'.join(lines) + '\n'
     else:
         return 'Мероприятий не найдено\n'
+
+
+async def footer_message(message):
+    return message.strip() + f'\n\n[@{BOT_LINK}](@{BOT_LINK})'
 
 
 async def process_events(date_from, date_to=None):

@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from keyboards import show_menu
 from aiogram import types
 
-from services.process import process_day_events, process_weekday_events, process_exhibitions, process_lucky_event, process_weekend_events
+from services.process import process_day_events, process_weekday_events, process_exhibitions, \
+    process_lucky_event, process_weekend_events
 from services import crud
 from services import process
 from config import MENU, CHANNEL_LINK, BOT_LINK, waiting_for_time
@@ -72,14 +73,17 @@ async def process_events_callback(callback_query: types.CallbackQuery):
     if data_command == 'weekend':
         saturday_events, sunday_events = await handler(daynow)
         answer = f"{answer}{saturday_events}\n{sunday_events}"
+        answer = await process.footer_message(answer)
         await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'exhibitions':
         answer = answer + await handler(daynow)
+        answer = await process.footer_message(answer)
         await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
     elif data_command == 'lucky':
         answer = answer + await handler(daynow)
+        answer = await process.footer_message(answer)
         await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
         return 1
@@ -88,7 +92,7 @@ async def process_events_callback(callback_query: types.CallbackQuery):
         return 1
     elif handler:
         result_text = await handler(daynow)
-        answer = answer + result_text
+        answer = answer + await process.footer_message(result_text)
         await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
         if 'не найдено' in result_text or result_text.strip=='':
@@ -104,9 +108,8 @@ async def process_weekday_callback(callback_query: types.CallbackQuery):
     data_command = callback_query.data
     weekday = list(MENU['weekday'].keys()).index(data_command)
 
-    answer = f"_{MENU['weekday'][data_command]}:_\n"
     result_text = await process_weekday_events(weekday, daynow)
-    answer = answer + result_text
+    answer = await process.footer_message(result_text)
     await callback_query.message.reply(answer, parse_mode="Markdown", disable_web_page_preview=True,
                                        reply_markup=await show_menu('weekday'))
 

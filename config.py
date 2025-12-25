@@ -59,6 +59,9 @@ MENU = {
     },
     'back': {
         'events':           'Вернуть меню назад'
+    },
+    'cancel_saved_events': {
+        'saved_events':         'Отменить'
     }
 }
 

@@ -108,7 +108,8 @@ async def handle_date_command(text_message):
             saturday_events, sunday_events = await handler(daynow)
             answer = f"_Выходные:_\n{saturday_events}\n{sunday_events}"
         else:
-            answer = answer + await handler(daynow)
+            answer += await handler(daynow)
+        answer = await process.footer_message(answer)
     else:
         answer = 'Неверная команда'
 
@@ -124,7 +125,7 @@ async def handle_date_text(message_text):
 
     parts = re.split(r'[.,\-/ ]', message_text)
     parts = [part for part in parts if part]  # Удаляем пустые строки
-    
+
     try:
         day = int(parts[0])  # Пытаемся получить день из первой части
         
@@ -160,12 +161,11 @@ async def handle_date_text(message_text):
         date_with_events = datetime(day=day, month=month, year=year)
         
         # Получаем события на указанную дату
-        answer = f"События на {day} {MONTHES[LANG][month-1]} {year}:\n"
-        answer += await process.process_events(date_with_events)
-        # Здесь должен быть код для получения событий на указанную дату
+        answer = await process.process_events(date_with_events)
+        answer = await process.footer_message(answer)
         
     except (ValueError, IndexError):
-        answer = "Не удалось распознать дату. Пожалуйста, укажите дату в формате 'ДД.ММ', 'ДД месяц' или просто 'ДД'."
+        answer = "Возникла ошибка, вероятно нам не удалось распознать дату.\n Пожалуйста, укажите дату в формате 'ДД.ММ', 'ДД месяц' или просто 'ДД'."
 
     return answer
 
@@ -175,8 +175,8 @@ async def handle_weekday_text(message_text):
 
     weekday = WEEK_MENU[LANG].index(message_text.capitalize())
 
-    answer = f"_{message_text.capitalize()}:_\n"
-    answer += await process.process_weekday_events(weekday, daynow)
+    answer = await process.process_weekday_events(weekday, daynow)
+    answer = await process.footer_message(answer)
     return answer
 
 
