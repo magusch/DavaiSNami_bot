@@ -45,7 +45,6 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
     else:
         callback_message = f'{data} не найдено, обратитесь к разработчику! \n\n/start'
         await callback_query.message.answer(callback_message, reply_markup=await show_menu('events'))
-    await wait_message.delete()
     user_monitor_dict = {
         'telegram_id': telegram_user_id,
         'telegram_info': f"{callback_query.from_user.username} ({callback_query.from_user.first_name} {callback_query.from_user.last_name})",
@@ -53,6 +52,8 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
         'type': 'data'
     }
     await crud.create_telegram_monitor(user_monitor_dict)
+    if wait_message:
+        await wait_message.delete()
 
 date_menu = {
     'today': lambda daynow: process_day_events(0, daynow),
