@@ -45,7 +45,7 @@ def build_event_message(events, is_dict=False):
         else:
             event_id = event['id'] if is_dict else event.id
             webapp_link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
-            lines.append(f"[{title} <П>]({webapp_link}) – {price}")
+            lines.append(f"[{title} 📱]({webapp_link}) – {price}")
             cnt_events += 1
     if cnt_events > 0:
         return '\n'.join(lines) + '\n'
