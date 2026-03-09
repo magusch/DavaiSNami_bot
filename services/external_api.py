@@ -1,4 +1,4 @@
-import time
+import asyncio
 import aiohttp
 
 from config import API_URL, API_TOKEN
@@ -55,7 +55,7 @@ async def check_status(task_id: str):
                     return {"error": "Задача не выполнена"}
         
         retries += 1
-        time.sleep(1)
+        await asyncio.sleep(1)
 
 
 async def create_post_by_ai(event_data):
