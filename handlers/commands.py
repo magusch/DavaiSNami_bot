@@ -33,10 +33,11 @@ async def start_command(message: types.Message, command):
     new_user = False
     if not user:
         await process.new_user(message)
+        user = await crud.get_user_by_telegram(message.from_user.id)
         new_user = True
 
     if command.args:
-        if "save-" in command.args:
+        if "save-" in command.args and user:
             event_id = command.args.split('-')[1].strip()
             if await process_user_event({'user_id': user.id, 'event_id': int(event_id), 'telegram_id': message.from_user.id}):
                 await message.answer(f"Пост сохранён! {command.args}")

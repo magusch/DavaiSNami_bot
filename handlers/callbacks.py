@@ -30,11 +30,17 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
     elif data in MENU['settings'].keys() or data in ['saved_events_old']:
         await process_settings_callback(callback_query)
     elif data in MENU['events'].keys():
-        not_minus_balance = await process_events_callback(callback_query)
+        try:
+            not_minus_balance = await process_events_callback(callback_query)
+        except Exception:
+            not_minus_balance = True
         if not not_minus_balance:
             await crud.change_balance(telegram_user_id, -2)
     elif data in MENU['weekday'].keys():
-        not_minus_balance = await process_weekday_callback(callback_query)
+        try:
+            not_minus_balance = await process_weekday_callback(callback_query)
+        except Exception:
+            not_minus_balance = True
         if not not_minus_balance:
             await crud.change_balance(telegram_user_id, -2)
     elif data in MENU['balance'].keys():
@@ -53,7 +59,10 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
     }
     await crud.create_telegram_monitor(user_monitor_dict)
     if wait_message:
-        await wait_message.delete()
+        try:
+            await wait_message.delete()
+        except Exception:
+            pass
 
 date_menu = {
     'today': lambda daynow: process_day_events(0, daynow),
@@ -96,7 +105,7 @@ async def process_events_callback(callback_query: types.CallbackQuery):
         answer = answer + await process.footer_message(result_text)
         await callback_query.message.answer(answer, parse_mode="Markdown",
                                            reply_markup=await show_menu('events'), disable_web_page_preview=True)
-        if 'не найдено' in result_text or result_text.strip=='':
+        if 'не найдено' in result_text or result_text.strip()=='':
             return 1
     else:
         await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
@@ -114,7 +123,7 @@ async def process_weekday_callback(callback_query: types.CallbackQuery):
     await callback_query.message.reply(answer, parse_mode="Markdown", disable_web_page_preview=True,
                                        reply_markup=await show_menu('weekday'))
 
-    if 'не найдено' in result_text or result_text.strip == '':
+    if 'не найдено' in result_text or result_text.strip() == '':
         return 1
 
 

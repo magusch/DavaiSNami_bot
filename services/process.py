@@ -216,6 +216,8 @@ async def process_user_event(user_event_dict):
         user = await crud.get_user_by_telegram(user_event_dict['telegram_id'])
         if user:
             user_event_dict['user_id'] = user.id
+        else:
+            return False
     elif 'user_id' not in user_event_dict and 'telegram_id' not in user_event_dict:
         return False
 
