@@ -7,6 +7,7 @@ TOKEN = os.getenv('token')
 URL = os.getenv('URL')
 ID_ADMIN = int(os.getenv('id_admin', 0))
 ID_CHANNEL = int(os.getenv('id_channel', 0))
+ID_DEV_CHANNEL = int(os.getenv('id_channel_dev', 0))
 CHANNEL_LINK = os.getenv('channel_url', '@DavaiSNami')
 BOT_LINK = os.getenv('bot_url', 'DavaiSNamiBot')
 

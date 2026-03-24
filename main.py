@@ -7,11 +7,50 @@ from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram import types
 
 from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, ErrorEvent
 
 import config
 from handlers import callbacks, commands, messages#, photos
+from handlers import callbacks, commands, messages
+
+logger = logging.getLogger(__name__)
 
 dp = Dispatcher()
+
+
+@dp.errors()
+async def error_handler(event: ErrorEvent):
+    logger.exception("Unhandled error: %s", event.exception)
+    update = event.update
+    error_text = "Произошла ошибка, попробуйте позже."
+    try:
+        if update.message:
+            await update.message.answer(error_text)
+        elif update.callback_query:
+            await update.callback_query.answer(error_text, show_alert=True)
+    except Exception:
+        logger.exception("Failed to send error message to user")
+
+    # Отправляем ошибку админу
+    if config.ID_ADMIN:
+        try:
+            import traceback
+            tb = traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__)
+            tb_short = "".join(tb[-5:])  # последние 5 строк трейсбека
+            user_info = ""
+            if update.message and update.message.from_user:
+                u = update.message.from_user
+                user_info = f"\nUser: {u.id} (@{u.username})"
+            elif update.callback_query and update.callback_query.from_user:
+                u = update.callback_query.from_user
+                user_info = f"\nUser: {u.id} (@{u.username})"
+            admin_text = f"⚠️ Ошибка в боте:{user_info}\n\n<pre>{tb_short[:3500]}</pre>"
+            bot = event.update.bot
+            await bot.send_message(config.ID_ADMIN, admin_text, parse_mode="HTML")
+        except Exception:
+            logger.exception("Failed to send error to admin")
+
+    return True
 
 
 # @dp.message(CommandStart())

@@ -1,10 +1,11 @@
 from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, DeclarativeBase
 
 from datetime import datetime
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 class TelegramMonitor(Base):
     __tablename__ = 'bot_telegram_monitor'
@@ -34,7 +35,7 @@ class DsnUser(Base):
     nickname = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    telegram_id = Column(Integer, nullable=True, index=True)
+    telegram_id = Column(BigInteger, nullable=True, index=True)
     balance = Column(Integer, default=100, nullable=True)
     weekend_guide = Column(Boolean, default=False, nullable=True)
 
