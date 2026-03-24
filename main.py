@@ -6,12 +6,12 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram import types
 
-from aiogram.types import CallbackQuery
 from aiogram.types import CallbackQuery, ErrorEvent
+from aiogram.fsm.context import FSMContext
 
 import config
-from handlers import callbacks, commands, messages#, photos
 from handlers import callbacks, commands, messages
+from states import ReminderState
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,11 @@ async def pre_checkout_query_handler(pre_checkout_query: types.PreCheckoutQuery)
     await pre_checkout_query.answer(ok=True)
 
 
+@dp.message(ReminderState.waiting_for_time)
+async def handle_reminder_time(message: types.Message, state: FSMContext) -> None:
+    await messages.handle_time_for_event(message, state)
+
+
 @dp.message()
 async def command_text_handler(message: types.Message) -> None:
     await messages.handle_message(message)
@@ -89,8 +94,8 @@ async def save_post_callback(callback: CallbackQuery):
 
 
 @dp.callback_query()
-async def process_menu_callback(callback_query: types.CallbackQuery) -> None:
-    await callbacks.process_menu_callback(callback_query)
+async def process_menu_callback(callback_query: types.CallbackQuery, state: FSMContext) -> None:
+    await callbacks.process_menu_callback(callback_query, state=state)
     if callback_query.data == "reminders":
         await callback_query.message.answer('hey напоминалка', parse_mode="Markdown")
         pass

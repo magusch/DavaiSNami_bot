@@ -3,7 +3,7 @@ import re
 from aiogram import types
 from datetime import datetime, timedelta, timezone
 
-from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL, waiting_for_time
+from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
 from keyboards import show_menu
 
 from services import process
@@ -45,23 +45,6 @@ async def handle_message(message: types.Message):
                                  disable_web_page_preview=True)
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
-    elif message.from_user.id in waiting_for_time:
-        await handle_time_for_event(message)
-        result = await process.process_saved_user_event(telegram_id=message.from_user.id)
-
-        if result is not None:
-            answer, sevent_menu = result
-        else:
-            answer = f"У вас нет сохранённых событий. Пересылайте события из канала"
-            sevent_menu = None
-
-        if sevent_menu:
-            await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                 reply_markup=sevent_menu)
-        else:
-            await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                 reply_markup=await show_menu('settings'))
-
     else:
         wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
         message_text = message_text.lower().capitalize()
@@ -213,11 +196,28 @@ async def process_forwarded_admin_message(message: types.Message):
     await message.reply("Пост отправлен на обработку!", reply_markup=await show_menu('events'))
 
 
-async def handle_time_for_event(message):
+async def handle_time_for_event(message, state):
+    data = await state.get_data()
+    event_id = data.get('event_id')
+    await state.clear()
+
     telegram_id = message.from_user.id
-    event_id = waiting_for_time.pop(telegram_id)
     remind_datetime = await process.edit_remind_time(telegram_id, event_id, message.text)
     if remind_datetime:
         await message.reply(f"Установлено напоминание: {remind_datetime}")
     else:
         await message.reply(f"Ошибка с определением времени, напоминалка не установлена.")
+
+    result = await process.process_saved_user_event(telegram_id=telegram_id)
+    if result is not None:
+        answer, sevent_menu = result
+    else:
+        answer = f"У вас нет сохранённых событий. Пересылайте события из канала"
+        sevent_menu = None
+
+    if sevent_menu:
+        await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                             reply_markup=sevent_menu)
+    else:
+        await message.answer(answer, parse_mode="Markdown", disable_web_page_preview=True,
+                             reply_markup=await show_menu('settings'))

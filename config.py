@@ -95,5 +95,3 @@ emoji_keyboard = {
     'Mon': '😴',   'Tue': '📈',   'Wed': '🐪',   'Thr': '🚀',
     'Fri': '🎉',   'Sat': '🥝',   'Sun': '☀️',
 }
-
-waiting_for_time = {}

@@ -7,12 +7,14 @@ from services.process import process_day_events, process_weekday_events, process
     process_lucky_event, process_weekend_events
 from services import crud
 from services import process
-from config import MENU, CHANNEL_LINK, BOT_LINK, waiting_for_time
+from config import MENU, CHANNEL_LINK, BOT_LINK
+from states import ReminderState
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-async def process_menu_callback(callback_query: types.CallbackQuery):
+async def process_menu_callback(callback_query: types.CallbackQuery, state=None):
+    await callback_query.answer()
     data = callback_query.data
     wait_text = 'подождите чуток...'
     if wait_text == callback_query.message.text or data in ['balance']:
@@ -46,7 +48,7 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
     elif data in MENU['balance'].keys():
         await process_balance_callback(callback_query)
     elif data.startswith('sevent_'):
-        if await process_saved_events(callback_query):
+        if await process_saved_events(callback_query, state=state):
             await process_settings_callback(callback_query)
     else:
         callback_message = f'{data} не найдено, обратитесь к разработчику! \n\n/start'
@@ -202,12 +204,19 @@ async def process_referral_start(callback):
     return await process.referral_click(referral_id, callback.from_user.id)
 
 
-async def process_saved_events(callback_query):
+async def process_saved_events(callback_query, state=None):
     callback_data = callback_query.data
     telegram_id = callback_query.from_user.id
     _, mod, event_id = callback_data.split('_')
     if mod in ['edit', 'enbl']:
-        waiting_for_time[telegram_id] = event_id
+        if not state:
+            await callback_query.message.answer(
+                'Не удалось установить напоминание, попробуйте позже.',
+                reply_markup=await show_menu('settings')
+            )
+            return
+        await state.update_data(event_id=event_id)
+        await state.set_state(ReminderState.waiting_for_time)
         await callback_query.message.answer(
             f'Введите дату и время для напоминания:', parse_mode="Markdown",
             reply_markup=await show_menu('cancel_saved_events')
