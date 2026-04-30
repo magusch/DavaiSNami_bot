@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 import config
 from handlers import callbacks, commands, messages
+from keyboards import show_menu
 from states import ReminderState
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,15 @@ async def error_handler(event: ErrorEvent):
     error_text = "Произошла ошибка, попробуйте позже."
     try:
         if update.message:
-            await update.message.answer(error_text)
+            await update.message.answer(error_text, reply_markup=await show_menu('events'))
         elif update.callback_query:
             await update.callback_query.answer(error_text, show_alert=True)
+            try:
+                await update.callback_query.message.answer(
+                    error_text, reply_markup=await show_menu('events')
+                )
+            except Exception:
+                logger.exception("Failed to send fallback menu after callback error")
     except Exception:
         logger.exception("Failed to send error message to user")
 

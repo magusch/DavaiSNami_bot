@@ -1,7 +1,10 @@
+import logging
 import re
 
 from aiogram import types
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
 from keyboards import show_menu
@@ -27,13 +30,17 @@ async def handle_message(message: types.Message):
             user_id = message.from_user.id
             stars_amount = message.successful_payment.total_amount*10
             await crud.change_balance(user_id, stars_amount)
-            await message.answer(f"Баланс пополнен на {stars_amount} ⭐️!")
+            await message.answer(
+                f"Баланс пополнен на {stars_amount} ⭐️!",
+                reply_markup=await show_menu('events'),
+            )
             if message_text is None:
                 message_text = ''
             message_text += f"; Баланс пополнен на {stars_amount} ⭐️!"
 
     elif message.forward_date:
-        if message.forward_from_chat.id == ID_CHANNEL:
+        forward_chat = message.forward_from_chat
+        if forward_chat and forward_chat.id == ID_CHANNEL:
             if await process_forwarded_event(message):
                 answer = "Мероприятие успешно сохранено! Также было запланировано напоминание! " \
                          "Отредактировать напоминание можно в настройках."
@@ -45,34 +52,50 @@ async def handle_message(message: types.Message):
                                  disable_web_page_preview=True)
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
-    else:
-        wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
-        message_text = message_text.lower().capitalize()
-        if message_text in [MENU['events']['weekday']]:
-            answer = MENU['events']['weekday']
-            await message.reply(answer, parse_mode="Markdown",
-                                reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
-        elif message_text in MENU['events'].values():
-            answer = await handle_date_command(message_text)
-            await message.reply(answer, parse_mode="Markdown",
-                                reply_markup=await show_menu('events'), disable_web_page_preview=True)
-        elif message_text in MENU['settings'].values():
-            await handle_setting(message_text)
-            await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
-                                 disable_web_page_preview=True)
-        elif message_text in MENU['weekday'].values():
-            answer = await handle_weekday_text(message_text)
-            await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
-                                disable_web_page_preview=True)
         else:
-            answer = await handle_date_text(message_text)
-            await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
-                                disable_web_page_preview=True)
+            await message.answer(
+                "Это не похоже на мероприятие из нашего канала. "
+                "Чтобы сохранить событие, пересылайте пост из канала с мероприятиями.",
+                reply_markup=await show_menu('events'),
+            )
+    else:
+        if not message_text:
+            await message.answer(
+                "Я понимаю только текстовые сообщения. Пожалуйста, выберите пункт меню или введите дату.",
+                reply_markup=await show_menu('events'),
+            )
+            return
+        wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
+        try:
+            message_text = message_text.lower().capitalize()
+            if message_text in [MENU['events']['weekday']]:
+                answer = MENU['events']['weekday']
+                await message.reply(answer, parse_mode="Markdown",
+                                    reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
+            elif message_text in MENU['events'].values():
+                answer = await handle_date_command(message_text)
+                await message.reply(answer, parse_mode="Markdown",
+                                    reply_markup=await show_menu('events'), disable_web_page_preview=True)
+            elif message_text in MENU['settings'].values():
+                await handle_setting(message_text)
+                await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
+                                     disable_web_page_preview=True)
+            elif message_text in MENU['weekday'].values():
+                answer = await handle_weekday_text(message_text)
+                await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
+                                    disable_web_page_preview=True)
+            else:
+                answer = await handle_date_text(message_text)
+                await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
+                                    disable_web_page_preview=True)
 
-            if 'не найдено' not in answer:
-                await crud.change_balance(message.from_user.id, -2)
-
-        await wait_message.delete()
+                if 'не найдено' not in answer:
+                    await crud.change_balance(message.from_user.id, -2)
+        finally:
+            try:
+                await wait_message.delete()
+            except Exception:
+                logger.exception("Failed to delete wait message")
     user_monitor_dict = {
         'telegram_id': message.from_user.id,
         'telegram_info': f"{message.from_user.username} ({message.from_user.first_name} {message.from_user.last_name})",

@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from keyboards import show_menu
 from aiogram import types
+
+logger = logging.getLogger(__name__)
 
 from services.process import process_day_events, process_weekday_events, process_exhibitions, \
     process_lucky_event, process_weekend_events
@@ -20,7 +23,11 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
     if wait_text == callback_query.message.text or data in ['balance']:
         wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
     else:
-        wait_message = await callback_query.message.edit_text(wait_text, reply_markup=await show_menu('back'))
+        try:
+            wait_message = await callback_query.message.edit_text(wait_text, reply_markup=await show_menu('back'))
+        except Exception:
+            logger.exception("Failed to edit message, falling back to answer")
+            wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
 
     telegram_user_id = callback_query.from_user.id
     if data == 'weekday':
@@ -230,7 +237,10 @@ async def process_saved_events(callback_query, state=None):
         else:
             answer = f'Произошла ошибка с доступом, попробуйте попозже'
 
-        await callback_query.message.answer(answer, parse_mode="Markdown")
+        await callback_query.message.answer(
+            answer, parse_mode="Markdown",
+            reply_markup=await show_menu('settings'),
+        )
         return 1
 
 
