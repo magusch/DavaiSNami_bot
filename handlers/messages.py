@@ -12,6 +12,7 @@ from keyboards import show_menu
 from services import process
 import services.crud as crud
 import services.external_api as external_api
+from services.utils import send_chunked
 
 date_menu = {
     MENU['events']['today']: lambda daynow: process.process_day_events(0, daynow),
@@ -74,22 +75,22 @@ async def handle_message(message: types.Message):
                                     reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
             elif message_text in MENU['events'].values():
                 answer = await handle_date_command(message_text)
-                await message.reply(answer, parse_mode="Markdown",
-                                    reply_markup=await show_menu('events'), disable_web_page_preview=True)
+                await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
+                                   reply_markup=await show_menu('events'), disable_web_page_preview=True)
             elif message_text in MENU['settings'].values():
                 await handle_setting(message_text)
                 await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
                                      disable_web_page_preview=True)
             elif message_text in MENU['weekday'].values():
                 answer = await handle_weekday_text(message_text)
-                await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
-                                    disable_web_page_preview=True)
+                await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
+                                   reply_markup=await show_menu('events'), disable_web_page_preview=True)
             else:
-                answer = await handle_date_text(message_text)
-                await message.reply(answer, parse_mode="Markdown", reply_markup=await show_menu('events'),
-                                    disable_web_page_preview=True)
+                answer, found = await handle_date_text(message_text)
+                await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
+                                   reply_markup=await show_menu('events'), disable_web_page_preview=True)
 
-                if 'не найдено' not in answer:
+                if found:
                     await crud.change_balance(message.from_user.id, -2)
         finally:
             try:
@@ -109,12 +110,12 @@ async def handle_date_command(text_message):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     handler = date_menu.get(text_message)
     if handler:
-        answer = f"*{text_message.capitalize()}:*\n"
         if text_message == MENU['events']['weekend']:
-            saturday_events, sunday_events = await handler(daynow)
-            answer = f"_Выходные:_\n{saturday_events}\n{sunday_events}"
+            sat, sun = await handler(daynow)
+            answer = f"_Выходные:_\n{sat.text}\n{sun.text}"
         else:
-            answer += await handler(daynow)
+            result = await handler(daynow)
+            answer = f"*{text_message.capitalize()}:*\n{result.text}"
         answer = await process.footer_message(answer)
     else:
         answer = 'Неверная команда'
@@ -165,15 +166,15 @@ async def handle_date_text(message_text):
             
         # Создаем объект даты
         date_with_events = datetime(day=day, month=month, year=year)
-        
+
         # Получаем события на указанную дату
-        answer = await process.process_events(date_with_events)
-        answer = await process.footer_message(answer)
-        
+        result = await process.process_events(date_with_events)
+        answer = await process.footer_message(result.text)
+        return answer, result.found
+
     except (ValueError, IndexError):
         answer = "Возникла ошибка, вероятно нам не удалось распознать дату.\n Пожалуйста, укажите дату в формате 'ДД.ММ', 'ДД месяц' или просто 'ДД'."
-
-    return answer
+        return answer, False
 
 
 async def handle_weekday_text(message_text):
@@ -181,9 +182,8 @@ async def handle_weekday_text(message_text):
 
     weekday = WEEK_MENU[LANG].index(message_text.capitalize())
 
-    answer = await process.process_weekday_events(weekday, daynow)
-    answer = await process.footer_message(answer)
-    return answer
+    result = await process.process_weekday_events(weekday, daynow)
+    return await process.footer_message(result.text)
 
 
 async def process_forwarded_event(message: types.Message):

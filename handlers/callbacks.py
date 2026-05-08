@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from keyboards import show_menu
 from aiogram import types
 
+from services.utils import send_chunked
+
 logger = logging.getLogger(__name__)
 
 from services.process import process_day_events, process_weekday_events, process_exhibitions, \
@@ -88,35 +90,39 @@ async def process_events_callback(callback_query: types.CallbackQuery):
     handler = date_menu.get(data_command)
 
     answer = f"*{MENU['events'][data_command]}:*\n"
+    events_menu = await show_menu('events')
     if data_command == 'weekend':
-        saturday_events, sunday_events = await handler(daynow)
-        answer = f"{answer}{saturday_events}\n{sunday_events}"
-        answer = await process.footer_message(answer)
-        await callback_query.message.answer(answer, parse_mode="Markdown",
-                                           reply_markup=await show_menu('events'), disable_web_page_preview=True)
+        sat, sun = await handler(daynow)
+        answer = await process.footer_message(f"{answer}{sat.text}\n{sun.text}")
+        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
+                           reply_markup=events_menu, disable_web_page_preview=True)
+        if sat.count + sun.count == 0:
+            return 1
     elif data_command == 'exhibitions':
-        answer = answer + await handler(daynow)
-        answer = await process.footer_message(answer)
-        await callback_query.message.answer(answer, parse_mode="Markdown",
-                                           reply_markup=await show_menu('events'), disable_web_page_preview=True)
+        result = await handler(daynow)
+        answer = await process.footer_message(answer + result.text)
+        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
+                           reply_markup=events_menu, disable_web_page_preview=True)
+        if not result.found:
+            return 1
     elif data_command == 'lucky':
-        answer = answer + await handler(daynow)
-        answer = await process.footer_message(answer)
-        await callback_query.message.answer(answer, parse_mode="Markdown",
-                                           reply_markup=await show_menu('events'), disable_web_page_preview=True)
+        result = await handler(daynow)
+        answer = await process.footer_message(answer + result.text)
+        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
+                           reply_markup=events_menu, disable_web_page_preview=True)
         return 1
     elif data_command == 'weekday':
         await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
         return 1
     elif handler:
-        result_text = await handler(daynow)
-        answer = answer + await process.footer_message(result_text)
-        await callback_query.message.answer(answer, parse_mode="Markdown",
-                                           reply_markup=await show_menu('events'), disable_web_page_preview=True)
-        if 'не найдено' in result_text or result_text.strip()=='':
+        result = await handler(daynow)
+        answer = answer + await process.footer_message(result.text)
+        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
+                           reply_markup=events_menu, disable_web_page_preview=True)
+        if not result.found:
             return 1
     else:
-        await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
+        await callback_query.message.answer('Неверная команда', reply_markup=events_menu)
         return 1
 
 
@@ -126,12 +132,12 @@ async def process_weekday_callback(callback_query: types.CallbackQuery):
     data_command = callback_query.data
     weekday = list(MENU['weekday'].keys()).index(data_command)
 
-    result_text = await process_weekday_events(weekday, daynow)
-    answer = await process.footer_message(result_text)
-    await callback_query.message.reply(answer, parse_mode="Markdown", disable_web_page_preview=True,
-                                       reply_markup=await show_menu('weekday'))
+    result = await process_weekday_events(weekday, daynow)
+    answer = await process.footer_message(result.text)
+    await send_chunked(callback_query.message, answer, reply_first=True, parse_mode="Markdown",
+                       disable_web_page_preview=True, reply_markup=await show_menu('weekday'))
 
-    if 'не найдено' in result_text or result_text.strip() == '':
+    if not result.found:
         return 1
 
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 import random
 import secrets
 
@@ -8,6 +9,15 @@ from . import crud
 from config import CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES, WEEK_MENU
 from keyboards import user_event_menu
 from . import utils
+
+
+class EventsResult(NamedTuple):
+    text: str
+    count: int
+
+    @property
+    def found(self) -> bool:
+        return self.count > 0
 
 
 def get_day(offset, daynow):
@@ -48,9 +58,9 @@ def build_event_message(events, is_dict=False):
             lines.append(f"[{title} 📱]({webapp_link}) – {price}")
             cnt_events += 1
     if cnt_events > 0:
-        return '\n'.join(lines) + '\n'
+        return EventsResult(text='\n'.join(lines) + '\n', count=cnt_events)
     else:
-        return 'Мероприятий не найдено\n'
+        return EventsResult(text='Мероприятий не найдено\n', count=0)
 
 
 async def footer_message(message):
@@ -80,13 +90,16 @@ async def process_events(date_from, date_to=None):
     events = await external_api.fetch_events(params)
 
     if events.get('result', {}).get('events'):
-        message = date_to_markdown(date_from) + '\n'
-        message += build_event_message(events['result']['events'], is_dict=True)
+        body = build_event_message(events['result']['events'], is_dict=True)
+        message = date_to_markdown(date_from) + '\n' + body.text
+        return EventsResult(text=message, count=body.count)
     else:
-        message = f'Мероприятий на {date_to_markdown(date_from)} не найдено\n\nНо может вам понравится это:\n'
-        message += await process_lucky_event()
-
-    return message
+        lucky = await process_lucky_event()
+        message = (
+            f'Мероприятий на {date_to_markdown(date_from)} не найдено\n\n'
+            f'Но может вам понравится это:\n{lucky.text}'
+        )
+        return EventsResult(text=message, count=0)
 
 
 async def process_day_events(offset, daynow):
@@ -117,8 +130,9 @@ async def process_exhibitions(daynow):
     message = ''
 
     if 'error' in exhibitions:
-        return f"Ошибка при получении выставок: {exhibitions['error']}"
+        return EventsResult(text=f"Ошибка при получении выставок: {exhibitions['error']}", count=0)
 
+    cnt_exhibs = 0
     if exhibitions.get('result', {}).get('events'):
         for exhib in exhibitions['result']['events']:
             to_date_raw = exhib.get('to_date')
@@ -144,6 +158,7 @@ async def process_exhibitions(daynow):
                         place_name = exhib.get('place').get('place_name')
 
                     divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price} – {place_name}")
+                    cnt_exhibs += 1
                     break
 
         for type, value in divided_dates_dict.items():
@@ -152,10 +167,11 @@ async def process_exhibitions(daynow):
 
             exhib_message = '\n'.join(value['exhibs'])
             message += f"*{EXHIBITIONS_PHRASES[type]}:*\n {exhib_message}\n\n"
-    else:
+
+    if cnt_exhibs == 0:
         message = 'Выставок не найдено'
 
-    return message
+    return EventsResult(text=message, count=cnt_exhibs)
 
 
 def get_divided_dates_dict(daynow):
@@ -186,7 +202,6 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
         'category': [-11]
     }
     events = await external_api.fetch_events(params)
-    message = ''
     if events['result']:
         event = random.choice(events['result']['events'])
         post_url = event['post_url']
@@ -205,9 +220,9 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
         message += f" 📆 {date_to_markdown(event['from_date'])}\n"
         message += f" 📍 {event_address}\n"
         message += f" 💰 {event['price']}\n"
+        return EventsResult(text=message, count=1)
 
-
-    return message
+    return EventsResult(text='', count=0)
 
 
 async def process_telegram_monitor(monitor_dict):

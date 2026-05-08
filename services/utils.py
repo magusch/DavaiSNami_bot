@@ -5,6 +5,47 @@ from config import MONTHES, LANG, TIMEZONE_HOUR
 
 USER_TZ = timezone(timedelta(hours=TIMEZONE_HOUR))
 
+TELEGRAM_MESSAGE_LIMIT = 4096
+SAFE_MESSAGE_LIMIT = 4000  # запас на разметку/футер
+
+
+def split_message(text: str, limit: int = SAFE_MESSAGE_LIMIT) -> list[str]:
+    """Разрезать длинный текст на куски <= limit. Режем по \\n\\n, потом \\n, потом пробелу."""
+    if len(text) <= limit:
+        return [text]
+    chunks = []
+    remaining = text
+    while len(remaining) > limit:
+        split_at = remaining.rfind('\n\n', 0, limit)
+        if split_at == -1:
+            split_at = remaining.rfind('\n', 0, limit)
+        if split_at == -1:
+            split_at = remaining.rfind(' ', 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunks.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+async def send_chunked(message, text, *, reply_first=False, **kwargs):
+    """Отправить текст одной или несколькими порциями.
+    reply_markup и footer-ссылки прикрепляются только к последнему сообщению,
+    чтобы не дублировать клавиатуру/ссылки. reply_first=True — первый чанк через reply()."""
+    chunks = split_message(text)
+    reply_markup = kwargs.pop('reply_markup', None)
+    for i, chunk in enumerate(chunks):
+        last = (i == len(chunks) - 1)
+        chunk_kwargs = dict(kwargs)
+        if last and reply_markup is not None:
+            chunk_kwargs['reply_markup'] = reply_markup
+        if i == 0 and reply_first:
+            await message.reply(chunk, **chunk_kwargs)
+        else:
+            await message.answer(chunk, **chunk_kwargs)
+
 
 def parse_user_datetime(text):
     """
