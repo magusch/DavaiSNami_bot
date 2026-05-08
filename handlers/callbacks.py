@@ -30,48 +30,47 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
             wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
 
     telegram_user_id = callback_query.from_user.id
-    if data == 'weekday':
-        await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
-    elif data == 'events':
-        await callback_query.message.answer('Когда?', reply_markup=await show_menu('events'))
-    elif data == 'settings':
-        await callback_query.message.answer('Настройки', reply_markup=await show_menu('settings'))
-    elif data in MENU['settings'].keys() or data in ['saved_events_old']:
-        await process_settings_callback(callback_query)
-    elif data in MENU['events'].keys():
-        try:
-            not_minus_balance = await process_events_callback(callback_query)
-        except Exception:
-            not_minus_balance = True
-        if not not_minus_balance:
-            await crud.change_balance(telegram_user_id, -2)
-    elif data in MENU['weekday'].keys():
-        try:
-            not_minus_balance = await process_weekday_callback(callback_query)
-        except Exception:
-            not_minus_balance = True
-        if not not_minus_balance:
-            await crud.change_balance(telegram_user_id, -2)
-    elif data in MENU['balance'].keys():
-        await process_balance_callback(callback_query)
-    elif data.startswith('sevent_'):
-        if await process_saved_events(callback_query, state=state):
+    try:
+        if data == 'weekday':
+            await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
+        elif data == 'events':
+            await callback_query.message.answer('Когда?', reply_markup=await show_menu('events'))
+        elif data == 'settings':
+            await callback_query.message.answer('Настройки', reply_markup=await show_menu('settings'))
+        elif data in MENU['settings'].keys() or data in ['saved_events_old']:
             await process_settings_callback(callback_query)
-    else:
-        callback_message = f'{data} не найдено, обратитесь к разработчику! \n\n/start'
-        await callback_query.message.answer(callback_message, reply_markup=await show_menu('events'))
-    user_monitor_dict = {
-        'telegram_id': telegram_user_id,
-        'telegram_info': f"{callback_query.from_user.username} ({callback_query.from_user.first_name} {callback_query.from_user.last_name})",
-        'message': data,
-        'type': 'data'
-    }
-    await crud.create_telegram_monitor(user_monitor_dict)
-    if wait_message:
+        elif data in MENU['events'].keys():
+            not_minus_balance = await process_events_callback(callback_query)
+            if not not_minus_balance:
+                await crud.change_balance(telegram_user_id, -2)
+        elif data in MENU['weekday'].keys():
+            not_minus_balance = await process_weekday_callback(callback_query)
+            if not not_minus_balance:
+                await crud.change_balance(telegram_user_id, -2)
+        elif data in MENU['balance'].keys():
+            await process_balance_callback(callback_query)
+        elif data.startswith('sevent_'):
+            if await process_saved_events(callback_query, state=state):
+                await process_settings_callback(callback_query)
+        else:
+            callback_message = f'{data} не найдено, обратитесь к разработчику! \n\n/start'
+            await callback_query.message.answer(callback_message, reply_markup=await show_menu('events'))
+    finally:
         try:
-            await wait_message.delete()
+            user_monitor_dict = {
+                'telegram_id': telegram_user_id,
+                'telegram_info': f"{callback_query.from_user.username} ({callback_query.from_user.first_name} {callback_query.from_user.last_name})",
+                'message': data,
+                'type': 'data'
+            }
+            await crud.create_telegram_monitor(user_monitor_dict)
         except Exception:
-            pass
+            logger.exception("Failed to log telegram monitor")
+        if wait_message:
+            try:
+                await wait_message.delete()
+            except Exception:
+                pass
 
 date_menu = {
     'today': lambda daynow: process_day_events(0, daynow),

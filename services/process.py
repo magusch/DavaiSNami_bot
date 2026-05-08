@@ -25,7 +25,7 @@ def date_to_markdown(date):
     if date is None:
         return ""
     if type(date) == str:
-        date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%S%z')
+        date = datetime.fromisoformat(date)
     return f"*{WEEK_MENU['ru'][date.weekday()]}, {date.day} {MONTHES['ru'][date.month-1]}*"
 
 
@@ -121,7 +121,10 @@ async def process_exhibitions(daynow):
 
     if exhibitions.get('result', {}).get('events'):
         for exhib in exhibitions['result']['events']:
-            to_date_exhib = datetime.strptime(exhib['to_date'].split('+')[0], '%Y-%m-%dT%H:%M:%S').astimezone(timezone.utc)
+            to_date_raw = exhib.get('to_date')
+            if not to_date_raw:
+                continue
+            to_date_exhib = datetime.fromisoformat(to_date_raw).astimezone(timezone.utc)
 
             for divided_date_key, divided_date_value in divided_dates_dict.items():
                 if to_date_exhib < divided_date_value['date']:
