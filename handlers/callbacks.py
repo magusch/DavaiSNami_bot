@@ -224,7 +224,12 @@ async def process_saved_events(callback_query, state=None):
         await state.update_data(event_id=event_id)
         await state.set_state(ReminderState.waiting_for_time)
         await callback_query.message.answer(
-            f'Введите дату и время для напоминания:', parse_mode="Markdown",
+            "Введите дату и время для напоминания.\n\n"
+            "Например:\n"
+            "• `12.05 18:30`\n"
+            "• `12 мая 18:30`\n"
+            "• `12.05` (без времени — в 12:00)",
+            parse_mode="Markdown",
             reply_markup=await show_menu('cancel_saved_events')
         )
     elif mod in ['dis', 'del']:

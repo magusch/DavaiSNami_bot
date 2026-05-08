@@ -229,7 +229,14 @@ async def handle_time_for_event(message, state):
     if remind_datetime:
         await message.reply(f"Установлено напоминание: {remind_datetime}")
     else:
-        await message.reply(f"Ошибка с определением времени, напоминалка не установлена.")
+        await message.reply(
+            "Не удалось распознать дату, напоминание не установлено.\n\n"
+            "Попробуйте формат:\n"
+            "• `12.05 18:30`\n"
+            "• `12 мая 18:30`\n"
+            "• `12.05` (без времени — в 12:00)",
+            parse_mode="Markdown",
+        )
 
     result = await process.process_saved_user_event(telegram_id=telegram_id)
     if result is not None:
