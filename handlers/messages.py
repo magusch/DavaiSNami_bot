@@ -12,7 +12,13 @@ from keyboards import show_menu
 from services import process
 import services.crud as crud
 import services.external_api as external_api
+import services.history as history_store
 from services.utils import send_chunked
+
+
+def _looks_like_date(text):
+    """Свободный текст, начинающийся с цифры, трактуем как дату (старый путь)."""
+    return bool(re.match(r'^\s*\d', text or ''))
 
 date_menu = {
     MENU['events']['today']: lambda daynow: process.process_day_events(0, daynow),
@@ -73,6 +79,23 @@ async def handle_message(message: types.Message):
                 answer = MENU['events']['weekday']
                 await message.reply(answer, parse_mode="Markdown",
                                     reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
+            elif message_text == MENU['events']['lucky']:
+                daynow = datetime.now(timezone.utc) + timedelta(hours=3)
+                result = await process.process_lucky_event(daynow)
+                answer = await process.footer_message(f"*{message_text.capitalize()}:*\n{result.text}")
+                sent_photo = False
+                if result.image:
+                    try:
+                        await message.answer_photo(
+                            result.image, caption=answer, parse_mode="Markdown",
+                            reply_markup=await show_menu('events'),
+                        )
+                        sent_photo = True
+                    except Exception:
+                        logger.exception("Failed to send lucky event photo, falling back to text")
+                if not sent_photo:
+                    await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
+                                       reply_markup=await show_menu('events'), disable_web_page_preview=True)
             elif message_text in MENU['events'].values():
                 answer = await handle_date_command(message_text)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
@@ -85,10 +108,33 @@ async def handle_message(message: types.Message):
                 answer = await handle_weekday_text(message_text)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=await show_menu('events'), disable_web_page_preview=True)
-            else:
+            elif _looks_like_date(message_text):
                 answer, found = await handle_date_text(message_text)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=await show_menu('events'), disable_web_page_preview=True)
+
+                if found:
+                    await crud.change_balance(message.from_user.id, -2)
+            else:
+                chat_id = message.from_user.id
+                history = history_store.get_history(chat_id)
+                answer, found, image = await process.process_text_search(message.text, history=history)
+                history_store.add_message(chat_id, message.text)
+
+                sent_photo = False
+                # подпись к фото ограничена 1024 символами — иначе шлём текстом
+                if image and len(answer) <= 1024:
+                    try:
+                        await message.answer_photo(
+                            image, caption=answer, parse_mode="Markdown",
+                            reply_markup=await show_menu('events'),
+                        )
+                        sent_photo = True
+                    except Exception:
+                        logger.exception("Failed to send search photo, falling back to text")
+                if not sent_photo:
+                    await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
+                                       reply_markup=await show_menu('events'), disable_web_page_preview=True)
 
                 if found:
                     await crud.change_balance(message.from_user.id, -2)

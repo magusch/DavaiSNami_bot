@@ -19,7 +19,11 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 async def process_menu_callback(callback_query: types.CallbackQuery, state=None):
-    await callback_query.answer()
+    try:
+        await callback_query.answer()
+    except Exception:
+        # callback мог устареть (бэклог после рестарта) — не валим обработку
+        logger.warning("Failed to answer callback query (likely too old)")
     data = callback_query.data
     wait_text = 'подождите чуток...'
     if wait_text == callback_query.message.text or data in ['balance']:
@@ -108,8 +112,19 @@ async def process_events_callback(callback_query: types.CallbackQuery):
     elif data_command == 'lucky':
         result = await handler(daynow)
         answer = await process.footer_message(answer + result.text)
-        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
-                           reply_markup=events_menu, disable_web_page_preview=True)
+        sent_photo = False
+        if result.image:
+            try:
+                await callback_query.message.answer_photo(
+                    result.image, caption=answer, parse_mode="Markdown",
+                    reply_markup=events_menu,
+                )
+                sent_photo = True
+            except Exception:
+                logger.exception("Failed to send lucky event photo, falling back to text")
+        if not sent_photo:
+            await send_chunked(callback_query.message, answer, parse_mode="Markdown",
+                               reply_markup=events_menu, disable_web_page_preview=True)
         return 1
     elif data_command == 'weekday':
         await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))

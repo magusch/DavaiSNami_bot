@@ -14,6 +14,7 @@ from . import utils
 class EventsResult(NamedTuple):
     text: str
     count: int
+    image: str = None
 
     @property
     def found(self) -> bool:
@@ -43,20 +44,30 @@ def build_event_message(events, is_dict=False):
     lines = []
     cnt_events = 0
     for event in events:
-        title = event['title'] if is_dict else event.title
-        post_url = event['post_url'] if is_dict else event.post_url
-        price = event['price'] if is_dict else event.price
+        if is_dict:
+            title = event.get('title') or 'Без названия'
+            post_url = event.get('post_url')
+            price = event.get('price')
+            event_id = event.get('id')
+        else:
+            title = event.title
+            post_url = event.post_url
+            price = event.price
+            event_id = event.id
 
         if post_url:
             if not post_url.startswith('http'):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
-            lines.append(f"[{title}]({post_url}) – {price}")
-            cnt_events += 1
+            link, label = post_url, title
         else:
-            event_id = event['id'] if is_dict else event.id
-            webapp_link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
-            lines.append(f"[{title} 📱]({webapp_link}) – {price}")
-            cnt_events += 1
+            link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
+            label = f"{title} 📱"
+
+        if price:
+            lines.append(f"[{label}]({link}) – {price}")
+        else:
+            lines.append(f"[{label}]({link})")
+        cnt_events += 1
     if cnt_events > 0:
         return EventsResult(text='\n'.join(lines) + '\n', count=cnt_events)
     else:
@@ -220,9 +231,159 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
         message += f" 📆 {date_to_markdown(event['from_date'])}\n"
         message += f" 📍 {event_address}\n"
         message += f" 💰 {event['price']}\n"
-        return EventsResult(text=message, count=1)
+        return EventsResult(text=message, count=1, image=event.get('image'))
 
     return EventsResult(text='', count=0)
+
+
+# Предлоги — признак свободного текста, а не ключевого слова.
+_PREPOSITIONS = {
+    'в', 'во', 'на', 'с', 'со', 'по', 'до', 'от', 'из', 'за', 'под', 'над',
+    'о', 'об', 'к', 'ко', 'у', 'для', 'про', 'без', 'при',
+}
+
+
+def is_keyword_query(text):
+    """1–2 слова без предлогов → keyword-поиск; всё остальное → semantic."""
+    words = text.split()
+    if not (1 <= len(words) <= 2):
+        return False
+    return not any(w.lower() in _PREPOSITIONS for w in words)
+
+
+def _semantic_header(query):
+    """Короткая строка «что понял анализатор» из filters (цена)."""
+    filters = (query or {}).get('filters') or {}
+    parts = []
+    if filters.get('free_only'):
+        parts.append('бесплатно')
+    elif filters.get('price_max'):
+        parts.append(f"до {filters['price_max']} ₽")
+    if not parts:
+        return ''
+    return f"_Ищу: {', '.join(parts)}_\n\n"
+
+
+def _parse_dt(raw):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def _fmt_event_date(raw):
+    """ISO-дата события → «Вт, 7 июля 16:00» в часовом поясе пользователя."""
+    dt = _parse_dt(raw)
+    if dt is None:
+        return ''
+    dt = utils.dt_utc_to_user(dt)
+    return f"{WEEK_MENU['ru'][dt.weekday()]}, {dt.day} {MONTHES['ru'][dt.month - 1]} {dt.strftime('%H:%M')}"
+
+
+def _top_event(events):
+    """Самое релевантное событие: min distance → max score → первое от API."""
+    with_dist = [e for e in events if isinstance(e.get('distance'), (int, float))]
+    if with_dist:
+        return min(with_dist, key=lambda e: e['distance'])
+    with_score = [e for e in events if isinstance(e.get('score'), (int, float))]
+    if with_score:
+        return max(with_score, key=lambda e: e['score'])
+    return events[0] if events else None
+
+
+def build_search_message(events):
+    """Рендер результатов поиска: сортировка по дате + дата в каждой строке.
+    Картинку берём у самого релевантного события (а не первого по дате)."""
+    if not events:
+        return EventsResult(text='Мероприятий не найдено\n', count=0)
+
+    top = _top_event(events)
+    image = top.get('image') if top else None
+
+    far = datetime.max.replace(tzinfo=timezone.utc)
+    events = sorted(events, key=lambda e: _parse_dt(e.get('from_date')) or far)
+
+    lines = []
+    for event in events:
+        title = (event.get('title') or 'Без названия').strip()
+        price = event.get('price')
+        post_url = event.get('post_url')
+        if post_url:
+            if not post_url.startswith('http'):
+                post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+            link, label = post_url, title
+        else:
+            link = f"https://t.me/{BOT_LINK}?startapp=event_{event.get('id')}"
+            label = f"{title} 📱"
+
+        date_str = _fmt_event_date(event.get('from_date'))
+        head = f"📅 {date_str}\n" if date_str else ''
+        price_str = f" – {price}" if price else ''
+        lines.append(f"{head}[{label}]({link}){price_str}")
+
+    if not lines:
+        return EventsResult(text='Мероприятий не найдено\n', count=0)
+    return EventsResult(text='\n\n'.join(lines) + '\n', count=len(lines), image=image)
+
+
+def _event_not_past(event, now):
+    """keyword-поиск не фильтрует по дате — отсекаем прошедшие события."""
+    raw = event.get('to_date') or event.get('from_date')
+    if not raw:
+        return True
+    try:
+        return datetime.fromisoformat(raw) >= now
+    except (ValueError, TypeError):
+        return True
+
+
+async def process_keyword_search(query):
+    """GET /search/. Возвращает (answer, found, image). found=False если ничего нет."""
+    result = await external_api.keyword_search(query)
+    if 'error' in result:
+        return 'Не удалось выполнить поиск, попробуйте чуть позже.', False, None
+    now = datetime.now(timezone.utc)
+    events = [e for e in result.get('events', []) if _event_not_past(e, now)]
+    if not events:
+        return '', False, None
+    body = build_search_message(events)
+    return await footer_message(body.text), body.found, body.image
+
+
+async def process_semantic_search(message_text, history=None):
+    """POST /search/semantic/. Возвращает (answer, found, image)."""
+    result = await external_api.semantic_search(message_text, history=history)
+
+    if 'error' in result:
+        return 'Не удалось выполнить поиск, попробуйте ещё раз чуть позже.', False, None
+
+    if result.get('status') == 'not_event_search':
+        return (
+            'Кажется, это не запрос мероприятия 🙂\n'
+            'Спросите меня, например: «джазовый концерт в выходные» '
+            'или «бесплатные лекции на этой неделе».'
+        ), False, None
+
+    events = result.get('result', {}).get('events', [])
+    if not events:
+        return 'По вашему запросу ничего не нашлось. Попробуйте переформулировать запрос.', False, None
+
+    body = build_search_message(events)
+    answer = _semantic_header(result.get('query')) + body.text
+    return await footer_message(answer), body.found, body.image
+
+
+async def process_text_search(message_text, history=None):
+    """Маршрутизация свободного текста: keyword → (fallback) semantic.
+    Возвращает (answer, found, image)."""
+    if is_keyword_query(message_text):
+        answer, found, image = await process_keyword_search(message_text)
+        if found:
+            return answer, found, image
+        # ничего по ключевому слову — пробуем семантику
+    return await process_semantic_search(message_text, history=history)
 
 
 async def process_telegram_monitor(monitor_dict):

@@ -28,7 +28,10 @@ async def error_handler(event: ErrorEvent):
         if update.message:
             await update.message.answer(error_text, reply_markup=await show_menu('events'))
         elif update.callback_query:
-            await update.callback_query.answer(error_text, show_alert=True)
+            try:
+                await update.callback_query.answer(error_text, show_alert=True)
+            except Exception:
+                logger.warning("Failed to answer callback query in error handler (likely too old)")
             try:
                 await update.callback_query.message.answer(
                     error_text, reply_markup=await show_menu('events')
