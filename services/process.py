@@ -236,6 +236,8 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
     return EventsResult(text='', count=0)
 
 
+SEMANTIC_MAX_DISTANCE = 1.0
+
 # Предлоги — признак свободного текста, а не ключевого слова.
 _PREPOSITIONS = {
     'в', 'во', 'на', 'с', 'со', 'по', 'до', 'от', 'из', 'за', 'под', 'над',
@@ -262,6 +264,30 @@ def _semantic_header(query):
     if not parts:
         return ''
     return f"_Ищу: {', '.join(parts)}_\n\n"
+
+
+def _clip_by_date(events, filters):
+    """Подстраховка: если аналитик вернул date_from/date_to — выкидываем
+    события вне диапазона (vector-search иногда просачивает лишнее).
+    ВНИМАНИЕ: чинит только протечку за пределы фильтра; если аналитик выбрал
+    НЕВЕРНЫЙ диапазон — это правится в API, не здесь."""
+    date_from = (filters or {}).get('date_from')
+    date_to = (filters or {}).get('date_to')
+    if not date_from and not date_to:
+        return events
+    out = []
+    for e in events:
+        ev = _parse_dt(e.get('from_date'))
+        if ev is None:
+            out.append(e)
+            continue
+        d = utils.dt_utc_to_user(ev).date().isoformat()
+        if date_from and d < date_from:
+            continue
+        if date_to and d > date_to:
+            continue
+        out.append(e)
+    return out
 
 
 def _parse_dt(raw):
@@ -354,7 +380,9 @@ async def process_keyword_search(query):
 
 async def process_semantic_search(message_text, history=None):
     """POST /search/semantic/. Возвращает (answer, found, image)."""
-    result = await external_api.semantic_search(message_text, history=history)
+    result = await external_api.semantic_search(
+        message_text, history=history, max_distance=SEMANTIC_MAX_DISTANCE
+    )
 
     if 'error' in result:
         return 'Не удалось выполнить поиск, попробуйте ещё раз чуть позже.', False, None
@@ -366,12 +394,16 @@ async def process_semantic_search(message_text, history=None):
             'или «бесплатные лекции на этой неделе».'
         ), False, None
 
+    query = result.get('query') or {}
     events = result.get('result', {}).get('events', [])
+    events = _clip_by_date(events, query.get('filters'))
     if not events:
         return 'По вашему запросу ничего не нашлось. Попробуйте переформулировать запрос.', False, None
 
     body = build_search_message(events)
-    answer = _semantic_header(result.get('query')) + body.text
+    intro = (result.get('reply') or '').strip()
+    intro = f"{intro}\n\n" if intro else _semantic_header(query)
+    answer = intro + body.text
     return await footer_message(answer), body.found, body.image
 
 
