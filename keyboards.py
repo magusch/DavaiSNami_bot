@@ -43,6 +43,31 @@ async def show_menu(menu_key="events"):
     return markup
 
 
+async def menu_with_more(more_callback, menu_key="events", text="➡️ Ещё мероприятия"):
+    """Regular menu + a "More" button on top with the given callback."""
+    base = await show_menu(menu_key)
+    more_row = [InlineKeyboardButton(text=text, callback_data=more_callback)]
+    return InlineKeyboardMarkup(inline_keyboard=[more_row] + base.inline_keyboard)
+
+
+async def feed_more_keyboard(result, menu_key="events"):
+    """Menu + "More events" when the feed has a next page.
+    `result` is a FeedResult (has_more/date_from/date_to/page).
+    callback: more:<date_from>:<date_to>:<next_page> (dates in YYYY-MM-DD)."""
+    if not getattr(result, 'has_more', False):
+        return await show_menu(menu_key)
+    callback = f"more:{result.date_from}:{result.date_to}:{result.page + 1}"
+    return await menu_with_more(callback, menu_key)
+
+
+async def exhibitions_more_keyboard(result, menu_key="events"):
+    """Menu + "More exhibitions" when there's a next page of exhibitions.
+    callback: exmore:<next_page> (no dates — the period is always "from today")."""
+    if not getattr(result, 'has_more', False):
+        return await show_menu(menu_key)
+    return await menu_with_more(f"exmore:{result.page + 1}", menu_key, text="➡️ Ещё выставки")
+
+
 async def week_menu():
     markup = InlineKeyboardMarkup(
         inline_keyboard=[

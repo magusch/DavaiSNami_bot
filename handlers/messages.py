@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
-from keyboards import show_menu
+from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard
 
 from services import process
 import services.crud as crud
@@ -19,16 +19,6 @@ from services.utils import send_chunked
 def _looks_like_date(text):
     """Свободный текст, начинающийся с цифры, трактуем как дату (старый путь)."""
     return bool(re.match(r'^\s*\d', text or ''))
-
-date_menu = {
-    MENU['events']['today']: lambda daynow: process.process_day_events(0, daynow),
-    MENU['events']['tomorrow']: lambda daynow: process.process_day_events(1, daynow),
-    MENU['events']['weekend']: lambda daynow: process.process_weekend_events(daynow),
-    MENU['events']['lucky']: lambda daynow: process.process_lucky_event(daynow),
-    MENU['events']['exhibitions']: lambda daynow: process.process_exhibitions(daynow),
-    #DATE_MENU['weekday']: lambda daynow: process.process_weekday_events(daynow.weekday(), daynow),
-}
-
 
 async def handle_message(message: types.Message):
     message_text = message.text
@@ -97,21 +87,21 @@ async def handle_message(message: types.Message):
                     await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                        reply_markup=await show_menu('events'), disable_web_page_preview=True)
             elif message_text in MENU['events'].values():
-                answer = await handle_date_command(message_text)
+                answer, keyboard = await handle_date_command(message_text)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
-                                   reply_markup=await show_menu('events'), disable_web_page_preview=True)
+                                   reply_markup=keyboard, disable_web_page_preview=True)
             elif message_text in MENU['settings'].values():
                 await handle_setting(message_text)
                 await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
                                      disable_web_page_preview=True)
             elif message_text in MENU['weekday'].values():
-                answer = await handle_weekday_text(message_text)
+                answer, keyboard = await handle_weekday_text(message_text)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
-                                   reply_markup=await show_menu('events'), disable_web_page_preview=True)
+                                   reply_markup=keyboard, disable_web_page_preview=True)
             elif _looks_like_date(message_text):
-                answer, found = await handle_date_text(message_text)
+                answer, found, keyboard = await handle_date_text(message_text)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
-                                   reply_markup=await show_menu('events'), disable_web_page_preview=True)
+                                   reply_markup=keyboard, disable_web_page_preview=True)
 
                 if found:
                     await crud.change_balance(message.from_user.id, -2)
@@ -124,14 +114,19 @@ async def handle_message(message: types.Message):
                 sent_photo = False
                 # подпись к фото ограничена 1024 символами — иначе шлём текстом
                 if image and len(answer) <= 1024:
-                    try:
-                        await message.answer_photo(
-                            image, caption=answer, parse_mode="Markdown",
-                            reply_markup=await show_menu('events'),
-                        )
-                        sent_photo = True
-                    except Exception:
-                        logger.exception("Failed to send search photo, falling back to text")
+                    img_bytes = await external_api.download_image(image)
+                    if img_bytes:
+                        try:
+                            await message.answer_photo(
+                                types.BufferedInputFile(img_bytes, filename="event.jpg"),
+                                caption=answer, parse_mode="Markdown",
+                                reply_markup=await show_menu('events'),
+                            )
+                            sent_photo = True
+                        except Exception:
+                            logger.exception("Failed to send search photo (query=%r), falling back to text", message.text)
+                    else:
+                        logger.info("Search photo unavailable, url=%s (query=%r)", image, message.text)
                 if not sent_photo:
                     await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                        reply_markup=await show_menu('events'), disable_web_page_preview=True)
@@ -153,20 +148,27 @@ async def handle_message(message: types.Message):
 
 
 async def handle_date_command(text_message):
+    """Text menu items (Today/Tomorrow/Weekend/Exhibitions) → feed.
+    Returns (answer, keyboard); keyboard = menu + "More" when there are more pages."""
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
-    handler = date_menu.get(text_message)
-    if handler:
-        if text_message == MENU['events']['weekend']:
-            sat, sun = await handler(daynow)
-            answer = f"_Выходные:_\n{sat.text}\n{sun.text}"
-        else:
-            result = await handler(daynow)
-            answer = f"*{text_message.capitalize()}:*\n{result.text}"
-        answer = await process.footer_message(answer)
-    else:
-        answer = 'Неверная команда'
 
-    return answer
+    if text_message == MENU['events']['today']:
+        result = await process.process_day_events(0, daynow)
+    elif text_message == MENU['events']['tomorrow']:
+        result = await process.process_day_events(1, daynow)
+    elif text_message == MENU['events']['weekend']:
+        result = await process.process_weekend_events(daynow)
+    elif text_message == MENU['events']['exhibitions']:
+        result = await process.process_exhibitions(daynow)
+        answer = await process.footer_message(f"*{text_message}:*\n{result.text}")
+        keyboard = await exhibitions_more_keyboard(result)
+        return answer, keyboard
+    else:
+        return 'Неверная команда', await show_menu('events')
+
+    answer = await process.footer_message(f"*{text_message}:*\n{result.text}")
+    keyboard = await feed_more_keyboard(result)
+    return answer, keyboard
 
 
 async def handle_setting(message_text):
@@ -216,11 +218,12 @@ async def handle_date_text(message_text):
         # Получаем события на указанную дату
         result = await process.process_events(date_with_events)
         answer = await process.footer_message(result.text)
-        return answer, result.found
+        keyboard = await feed_more_keyboard(result)
+        return answer, result.found, keyboard
 
     except (ValueError, IndexError):
         answer = "Возникла ошибка, вероятно нам не удалось распознать дату.\n Пожалуйста, укажите дату в формате 'ДД.ММ', 'ДД месяц' или просто 'ДД'."
-        return answer, False
+        return answer, False, await show_menu('events')
 
 
 async def handle_weekday_text(message_text):
@@ -229,7 +232,9 @@ async def handle_weekday_text(message_text):
     weekday = WEEK_MENU[LANG].index(message_text.capitalize())
 
     result = await process.process_weekday_events(weekday, daynow)
-    return await process.footer_message(result.text)
+    answer = await process.footer_message(result.text)
+    keyboard = await feed_more_keyboard(result, 'weekday')
+    return answer, keyboard
 
 
 async def process_forwarded_event(message: types.Message):

@@ -21,6 +21,27 @@ class EventsResult(NamedTuple):
         return self.count > 0
 
 
+class FeedResult(NamedTuple):
+    """Diversified feed result plus the pagination data for the "More" button."""
+    text: str
+    count: int
+    has_more: bool = False
+    date_from: str = None
+    date_to: str = None
+    page: int = 0
+
+    @property
+    def found(self) -> bool:
+        return self.count > 0
+
+
+FEED_LIMIT = 15
+FEED_PER_CATEGORY = 4
+
+EXHIBITIONS_LIMIT = 15
+EXHIBITIONS_FETCH = 100
+
+
 def get_day(offset, daynow):
     return daynow + timedelta(days=offset)
 
@@ -74,115 +95,215 @@ def build_event_message(events, is_dict=False):
         return EventsResult(text='Мероприятий не найдено\n', count=0)
 
 
+def _event_link_line(event):
+    """A single feed event line: [title](link) – price."""
+    title = (event.get('title') or 'Без названия').strip()
+    price = event.get('price')
+    post_url = event.get('post_url')
+    event_id = event.get('id')
+
+    if post_url:
+        if not post_url.startswith('http'):
+            post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+        link, label = post_url, title
+    else:
+        link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
+        label = f"{title} 📱"
+
+    if price:
+        return f"[{label}]({link}) – {price}"
+    return f"[{label}]({link})"
+
+
+def build_feed_message(events, window_start=None):
+    """Render the feed: events grouped by day, each day with a date header,
+    events within a day kept in feed order (by score).
+
+    An event's day is taken from its `from_date`, but never earlier than
+    `window_start` (the start of the requested period). Otherwise a multi-day
+    event (a festival running all week) queried for Thursday would show under a
+    "Mon" header, and one running since last week would show in "Tomorrow"
+    under its start date. For single-day queries (Today/Tomorrow/weekday) this
+    collapses everything under one header = the requested day."""
+    if not events:
+        return EventsResult(text='Мероприятий не найдено\n', count=0)
+
+    groups = {}
+    for event in events:
+        dt = _parse_dt(event.get('from_date'))
+        if dt is not None:
+            day_key = utils.dt_utc_to_user(dt).date().isoformat()
+            # event may have started before the window — show it under the window's first day
+            if window_start and day_key < window_start:
+                day_key = window_start
+        elif window_start:
+            day_key = window_start
+        else:
+            day_key = 'nodate'
+        groups.setdefault(day_key, []).append(event)
+
+    # days ascending by date, undated events last
+    day_keys = sorted(groups, key=lambda k: (k == 'nodate', k))
+
+    blocks = []
+    cnt = 0
+    for day_key in day_keys:
+        lines = [_event_link_line(e) for e in groups[day_key]]
+        cnt += len(lines)
+        header = date_to_markdown(day_key) if day_key != 'nodate' else ''
+        block = '\n'.join(lines)
+        blocks.append(f"{header}\n{block}" if header else block)
+
+    return EventsResult(text='\n\n'.join(blocks) + '\n', count=cnt)
+
+
 async def footer_message(message):
     return message.strip() + f'\n\n[@{BOT_LINK}](@{BOT_LINK})'
 
 
-async def process_events(date_from, date_to=None):
-    if type(date_from) != str:
-        date_from_str = date_from.strftime('%Y-%m-%d')
-    else:
-        date_from_str = date_from
+def _date_str(date):
+    """Date (datetime|str) → 'YYYY-MM-DD'."""
+    if isinstance(date, str):
+        return date
+    return date.strftime('%Y-%m-%d')
 
-    if date_to:
-        if type(date_to) != str:
-            date_to_str = date_to.strftime('%Y-%m-%d')
-        else:
-            date_to_str = date_to
-    else:
-        date_to_str = date_from_str
+
+async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT):
+    """Diversified event feed for a period (POST /events/feed/).
+
+    One page = up to `limit` diverse events that fit into a single message.
+    The next chunk = the same request with page+1 (the "More" button). Returns
+    a FeedResult with the has_more flag and the period bounds used to build that button."""
+    date_from_str = _date_str(date_from)
+    date_to_str = _date_str(date_to) if date_to else date_from_str
 
     params = {
         'date_from': date_from_str,
         'date_to': date_to_str,
-        'limit': 100,
-        'category': [-11]
+        'limit': limit,
+        'page': page,
+        'per_category': FEED_PER_CATEGORY,
+        'category': [-11],
     }
-    events = await external_api.fetch_events(params)
+    data = await external_api.fetch_feed(params)
 
-    if events.get('result', {}).get('events'):
-        body = build_event_message(events['result']['events'], is_dict=True)
-        message = date_to_markdown(date_from) + '\n' + body.text
-        return EventsResult(text=message, count=body.count)
-    else:
-        lucky = await process_lucky_event()
-        message = (
-            f'Мероприятий на {date_to_markdown(date_from)} не найдено\n\n'
-            f'Но может вам понравится это:\n{lucky.text}'
-        )
-        return EventsResult(text=message, count=0)
+    if 'error' in data:
+        return FeedResult(text=f"Не удалось получить мероприятия: {data['error']}", count=0)
+
+    result = data.get('result', {}) or {}
+    events = result.get('events', [])
+    diverse_total = (result.get('request', {}) or {}).get('diverse_total', len(events))
+
+    if not events:
+        if page == 0:
+            lucky = await process_lucky_event()
+            message = (
+                f'Мероприятий на {date_to_markdown(date_from_str)} не найдено\n\n'
+                f'Но может вам понравится это:\n{lucky.text}'
+            )
+            return FeedResult(text=message, count=0)
+        # page past the end of the feed — the user has scrolled through everything
+        return FeedResult(text='Это были все мероприятия за этот период ✨', count=0,
+                          date_from=date_from_str, date_to=date_to_str, page=page)
+
+    body = build_feed_message(events, window_start=date_from_str)
+    has_more = (page + 1) * limit < diverse_total
+    return FeedResult(text=body.text, count=body.count, has_more=has_more,
+                      date_from=date_from_str, date_to=date_to_str, page=page)
 
 
-async def process_day_events(offset, daynow):
+# Backwards-compat: old name, now built on top of the feed (typed dates, etc.).
+async def process_events(date_from, date_to=None, page=0):
+    return await process_feed(date_from, date_to, page=page)
+
+
+async def process_day_events(offset, daynow, page=0):
     event_date = get_day(offset, daynow)
-    return await process_events(event_date)
+    return await process_feed(event_date, page=page)
 
 
-async def process_weekday_events(offset, daynow):
+async def process_weekday_events(offset, daynow, page=0):
     event_date = get_weekday(offset, daynow)
-    return await process_events(event_date)
+    return await process_feed(event_date, page=page)
 
 
-async def process_weekend_events(daynow):
-    saturday_events = await process_weekday_events(5, daynow)
-    sunday_events = await process_weekday_events(6, daynow)
-    return saturday_events, sunday_events
+def weekend_range(daynow):
+    """Upcoming Saturday and Sunday (Sat = get_weekday(5), Sun = Sat+1)."""
+    saturday = get_weekday(5, daynow)
+    return saturday, saturday + timedelta(days=1)
 
 
-async def process_exhibitions(daynow):
+async def process_weekend_events(daynow, page=0):
+    """Weekend — ONE feed request for the Sat–Sun range. The feed balances
+    events across the two days, so the reply fits in one message (was 2–3)."""
+    saturday, sunday = weekend_range(daynow)
+    return await process_feed(saturday, sunday, page=page)
+
+
+async def process_exhibitions(daynow, page=0):
+    """Exhibitions (category 11) with their own layout by end date
+    (Ending soon / Next month / Others). Show at most EXHIBITIONS_LIMIT at a
+    time; the rest are reachable via the "More" button (page+1)."""
     params = {
         'date_from': daynow.strftime('%Y-%m-%d'),
-        'limit': 100,
+        'limit': EXHIBITIONS_FETCH,
         'category': [11],
         'fields': ['id', 'title', 'post_url', 'price', 'to_date', 'address', 'place'],
     }
     exhibitions = await external_api.fetch_events(params)
-    divided_dates_dict = get_divided_dates_dict(daynow)
-    message = ''
 
     if 'error' in exhibitions:
-        return EventsResult(text=f"Ошибка при получении выставок: {exhibitions['error']}", count=0)
+        return FeedResult(text=f"Ошибка при получении выставок: {exhibitions['error']}", count=0)
 
+    # only exhibitions with an end date (we bucket them by it)
+    all_exhibs = [e for e in (exhibitions.get('result', {}).get('events') or []) if e.get('to_date')]
+
+    start = page * EXHIBITIONS_LIMIT
+    page_exhibs = all_exhibs[start:start + EXHIBITIONS_LIMIT]
+    has_more = start + EXHIBITIONS_LIMIT < len(all_exhibs)
+
+    if not page_exhibs:
+        text = 'Выставок не найдено' if page == 0 else 'Это были все выставки ✨'
+        return FeedResult(text=text, count=0, page=page)
+
+    divided_dates_dict = get_divided_dates_dict(daynow)
     cnt_exhibs = 0
-    if exhibitions.get('result', {}).get('events'):
-        for exhib in exhibitions['result']['events']:
-            to_date_raw = exhib.get('to_date')
-            if not to_date_raw:
-                continue
-            to_date_exhib = datetime.fromisoformat(to_date_raw).astimezone(timezone.utc)
+    for exhib in page_exhibs:
+        to_date_exhib = datetime.fromisoformat(exhib['to_date']).astimezone(timezone.utc)
 
-            for divided_date_key, divided_date_value in divided_dates_dict.items():
-                if to_date_exhib < divided_date_value['date']:
+        for divided_date_key, divided_date_value in divided_dates_dict.items():
+            if to_date_exhib < divided_date_value['date']:
 
-                    title = exhib['title']
-                    post_url = exhib['post_url']
-                    price = exhib['price']
-                    place_name = exhib['address'].split(',')[0]
-                    if post_url:
-                        if not post_url.startswith('http'):
-                            post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
-                    else:
-                        exhib_id = exhib['id']
-                        post_url = f"https://t.me/{BOT_LINK}?startapp=event_{exhib_id}"
+                title = exhib['title']
+                post_url = exhib['post_url']
+                price = exhib['price']
+                place_name = exhib['address'].split(',')[0]
+                if post_url:
+                    if not post_url.startswith('http'):
+                        post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
+                else:
+                    exhib_id = exhib['id']
+                    post_url = f"https://t.me/{BOT_LINK}?startapp=event_{exhib_id}"
 
-                    if exhib.get('place'):
-                        place_name = exhib.get('place').get('place_name')
+                if exhib.get('place'):
+                    place_name = exhib.get('place').get('place_name')
 
-                    divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price} – {place_name}")
-                    cnt_exhibs += 1
-                    break
+                divided_dates_dict[divided_date_key]['exhibs'].append(f"[{title}]({post_url}) – {price} – {place_name}")
+                cnt_exhibs += 1
+                break
 
-        for type, value in divided_dates_dict.items():
-            if not value['exhibs']:
-                continue
+    message = ''
+    for type, value in divided_dates_dict.items():
+        if not value['exhibs']:
+            continue
 
-            exhib_message = '\n'.join(value['exhibs'])
-            message += f"*{EXHIBITIONS_PHRASES[type]}:*\n {exhib_message}\n\n"
+        exhib_message = '\n'.join(value['exhibs'])
+        message += f"*{EXHIBITIONS_PHRASES[type]}:*\n {exhib_message}\n\n"
 
     if cnt_exhibs == 0:
         message = 'Выставок не найдено'
 
-    return EventsResult(text=message, count=cnt_exhibs)
+    return FeedResult(text=message, count=cnt_exhibs, has_more=has_more, page=page)
 
 
 def get_divided_dates_dict(daynow):
@@ -236,8 +357,6 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
     return EventsResult(text='', count=0)
 
 
-SEMANTIC_MAX_DISTANCE = 1.0
-
 # Предлоги — признак свободного текста, а не ключевого слова.
 _PREPOSITIONS = {
     'в', 'во', 'на', 'с', 'со', 'по', 'до', 'от', 'из', 'за', 'под', 'над',
@@ -264,30 +383,6 @@ def _semantic_header(query):
     if not parts:
         return ''
     return f"_Ищу: {', '.join(parts)}_\n\n"
-
-
-def _clip_by_date(events, filters):
-    """Подстраховка: если аналитик вернул date_from/date_to — выкидываем
-    события вне диапазона (vector-search иногда просачивает лишнее).
-    ВНИМАНИЕ: чинит только протечку за пределы фильтра; если аналитик выбрал
-    НЕВЕРНЫЙ диапазон — это правится в API, не здесь."""
-    date_from = (filters or {}).get('date_from')
-    date_to = (filters or {}).get('date_to')
-    if not date_from and not date_to:
-        return events
-    out = []
-    for e in events:
-        ev = _parse_dt(e.get('from_date'))
-        if ev is None:
-            out.append(e)
-            continue
-        d = utils.dt_utc_to_user(ev).date().isoformat()
-        if date_from and d < date_from:
-            continue
-        if date_to and d > date_to:
-            continue
-        out.append(e)
-    return out
 
 
 def _parse_dt(raw):
@@ -379,10 +474,10 @@ async def process_keyword_search(query):
 
 
 async def process_semantic_search(message_text, history=None):
-    """POST /search/semantic/. Возвращает (answer, found, image)."""
-    result = await external_api.semantic_search(
-        message_text, history=history, max_distance=SEMANTIC_MAX_DISTANCE
-    )
+    """POST /search/semantic/. Возвращает (answer, found, image).
+    Всю фильтрацию (даты/категории/релевантность/ослабление при пустой выдаче)
+    держит API — бот ничего сам не отсекает."""
+    result = await external_api.semantic_search(message_text, history=history)
 
     if 'error' in result:
         return 'Не удалось выполнить поиск, попробуйте ещё раз чуть позже.', False, None
@@ -396,7 +491,6 @@ async def process_semantic_search(message_text, history=None):
 
     query = result.get('query') or {}
     events = result.get('result', {}).get('events', [])
-    events = _clip_by_date(events, query.get('filters'))
     if not events:
         return 'По вашему запросу ничего не нашлось. Попробуйте переформулировать запрос.', False, None
 

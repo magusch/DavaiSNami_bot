@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from keyboards import show_menu
+from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard
 from aiogram import types
 
 from services.utils import send_chunked
@@ -12,6 +12,7 @@ from services.process import process_day_events, process_weekday_events, process
     process_lucky_event, process_weekend_events
 from services import crud
 from services import process
+from services import external_api
 from config import MENU, CHANNEL_LINK, BOT_LINK
 from states import ReminderState
 
@@ -26,7 +27,9 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
         logger.warning("Failed to answer callback query (likely too old)")
     data = callback_query.data
     wait_text = 'подождите чуток...'
-    if wait_text == callback_query.message.text or data in ['balance']:
+    if (not callback_query.message.text
+            or wait_text == callback_query.message.text or data in ['balance']
+            or data.startswith('more:') or data.startswith('exmore:')):
         wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
     else:
         try:
@@ -47,6 +50,14 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
             await process_settings_callback(callback_query)
         elif data in MENU['events'].keys():
             not_minus_balance = await process_events_callback(callback_query)
+            if not not_minus_balance:
+                await crud.change_balance(telegram_user_id, -2)
+        elif data.startswith('more:'):
+            not_minus_balance = await process_more_callback(callback_query)
+            if not not_minus_balance:
+                await crud.change_balance(telegram_user_id, -2)
+        elif data.startswith('exmore:'):
+            not_minus_balance = await process_exhibitions_more_callback(callback_query)
             if not not_minus_balance:
                 await crud.change_balance(telegram_user_id, -2)
         elif data in MENU['weekday'].keys():
@@ -78,67 +89,94 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
             except Exception:
                 pass
 
-date_menu = {
-    'today': lambda daynow: process_day_events(0, daynow),
-    'tomorrow': lambda daynow: process_day_events(1, daynow),
-    'weekend': lambda daynow: process_weekend_events(daynow),
-    'exhibitions': lambda daynow: process_exhibitions(daynow),
-    'lucky': lambda daynow: process_lucky_event(daynow),
-    'weekday': lambda daynow: process_weekday_events(daynow.weekday(), daynow),
-}
+async def _send_feed(message, title, result, menu_key='events'):
+    answer = await process.footer_message(f"{title}\n{result.text}")
+    keyboard = await feed_more_keyboard(result, menu_key)
+    await send_chunked(message, answer, parse_mode="Markdown",
+                       reply_markup=keyboard, disable_web_page_preview=True)
 
 
 async def process_events_callback(callback_query: types.CallbackQuery):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     data_command = callback_query.data
-    handler = date_menu.get(data_command)
-
-    answer = f"*{MENU['events'][data_command]}:*\n"
     events_menu = await show_menu('events')
-    if data_command == 'weekend':
-        sat, sun = await handler(daynow)
-        answer = await process.footer_message(f"{answer}{sat.text}\n{sun.text}")
+    title = f"*{MENU['events'].get(data_command, '')}:*"
+
+    if data_command == 'exhibitions':
+        result = await process_exhibitions(daynow)
+        answer = await process.footer_message(f"{title}\n{result.text}")
+        keyboard = await exhibitions_more_keyboard(result)
         await send_chunked(callback_query.message, answer, parse_mode="Markdown",
-                           reply_markup=events_menu, disable_web_page_preview=True)
-        if sat.count + sun.count == 0:
-            return 1
-    elif data_command == 'exhibitions':
-        result = await handler(daynow)
-        answer = await process.footer_message(answer + result.text)
-        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
-                           reply_markup=events_menu, disable_web_page_preview=True)
-        if not result.found:
-            return 1
-    elif data_command == 'lucky':
-        result = await handler(daynow)
-        answer = await process.footer_message(answer + result.text)
+                           reply_markup=keyboard, disable_web_page_preview=True)
+        return 1 if not result.found else None
+
+    if data_command == 'lucky':
+        result = await process_lucky_event(daynow)
+        answer = await process.footer_message(f"{title}\n{result.text}")
         sent_photo = False
         if result.image:
-            try:
-                await callback_query.message.answer_photo(
-                    result.image, caption=answer, parse_mode="Markdown",
-                    reply_markup=events_menu,
-                )
-                sent_photo = True
-            except Exception:
-                logger.exception("Failed to send lucky event photo, falling back to text")
+            img_bytes = await external_api.download_image(result.image)
+            if img_bytes:
+                try:
+                    await callback_query.message.answer_photo(
+                        types.BufferedInputFile(img_bytes, filename="event.jpg"),
+                        caption=answer, parse_mode="Markdown",
+                        reply_markup=events_menu,
+                    )
+                    sent_photo = True
+                except Exception:
+                    logger.exception("Failed to send lucky event photo, falling back to text")
+            else:
+                logger.info("Lucky photo unavailable, url=%s", result.image)
         if not sent_photo:
             await send_chunked(callback_query.message, answer, parse_mode="Markdown",
                                reply_markup=events_menu, disable_web_page_preview=True)
         return 1
-    elif data_command == 'weekday':
-        await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
-        return 1
-    elif handler:
-        result = await handler(daynow)
-        answer = answer + await process.footer_message(result.text)
-        await send_chunked(callback_query.message, answer, parse_mode="Markdown",
-                           reply_markup=events_menu, disable_web_page_preview=True)
-        if not result.found:
-            return 1
+
+    # diversified feed: today / tomorrow / weekend
+    if data_command == 'today':
+        result = await process_day_events(0, daynow)
+    elif data_command == 'tomorrow':
+        result = await process_day_events(1, daynow)
+    elif data_command == 'weekend':
+        result = await process_weekend_events(daynow)
     else:
         await callback_query.message.answer('Неверная команда', reply_markup=events_menu)
         return 1
+
+    await _send_feed(callback_query.message, title, result)
+    return 1 if not result.found else None
+
+
+async def process_more_callback(callback_query: types.CallbackQuery):
+    """"More" button — the next feed page for the same period."""
+    try:
+        _, date_from, date_to, page = callback_query.data.split(':')
+        page = int(page)
+    except (ValueError, IndexError):
+        await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
+        return 1
+
+    result = await process.process_feed(date_from, date_to, page=page)
+    await _send_feed(callback_query.message, '*Ещё мероприятия:*', result)
+    return 1 if not result.found else None
+
+
+async def process_exhibitions_more_callback(callback_query: types.CallbackQuery):
+    """"More exhibitions" button — the next page of exhibitions."""
+    daynow = datetime.now(timezone.utc) + timedelta(hours=3)
+    try:
+        page = int(callback_query.data.split(':')[1])
+    except (ValueError, IndexError):
+        await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
+        return 1
+
+    result = await process_exhibitions(daynow, page=page)
+    answer = await process.footer_message(f"*Ещё выставки:*\n{result.text}")
+    keyboard = await exhibitions_more_keyboard(result)
+    await send_chunked(callback_query.message, answer, parse_mode="Markdown",
+                       reply_markup=keyboard, disable_web_page_preview=True)
+    return 1 if not result.found else None
 
 
 async def process_weekday_callback(callback_query: types.CallbackQuery):
@@ -149,8 +187,9 @@ async def process_weekday_callback(callback_query: types.CallbackQuery):
 
     result = await process_weekday_events(weekday, daynow)
     answer = await process.footer_message(result.text)
+    keyboard = await feed_more_keyboard(result, 'weekday')
     await send_chunked(callback_query.message, answer, reply_first=True, parse_mode="Markdown",
-                       disable_web_page_preview=True, reply_markup=await show_menu('weekday'))
+                       disable_web_page_preview=True, reply_markup=keyboard)
 
     if not result.found:
         return 1
