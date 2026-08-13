@@ -1,5 +1,5 @@
 from aiogram import types
-from config import CHANNEL_LINK
+from config import CHANNEL_LINK, ACTION_COST, STARS_RATE, TOPUP_STARS, REFERRAL_BONUS
 from keyboards import show_menu
 
 import services.crud as crud
@@ -56,10 +56,23 @@ async def start_command(message: types.Message, command):
         await help_command(message)
 
 
+
+
+def _price_note():
+    """One-line price list for /start and /help — computed from config, never hardcoded,
+    so the texts follow whenever the rates change."""
+    return (
+        f"\n\n💎 *Самоцветы*: афиша — {ACTION_COST['feed']} 💎, "
+        f"поиск по слову — {ACTION_COST['search_keyword']} 💎, "
+        f"умный поиск текстом — {ACTION_COST['search_semantic']} 💎.\n"
+        f"Баланс и пополнение — в ⚙️ Настройках ({TOPUP_STARS} ⭐ → {TOPUP_STARS * STARS_RATE} 💎), "
+        f"или позовите друга: по {REFERRAL_BONUS} 💎 обоим."
+    )
+
 async def send_welcome(message: types.Message):
     text = (f"Привет! Это бот канала {CHANNEL_LINK}. С моей помощью можно получить краткий гид мероприятий "
             "на определённый день, на выходные или по проходящим выставкам в городе.\n\n"
-            "Чтобы начать, укажите дату или нажмите на кнопку в меню.")
+            "Чтобы начать, укажите дату или нажмите на кнопку в меню." + _price_note())
     
     keyboard = await show_menu('events')
     
@@ -70,7 +83,7 @@ async def send_welcome(message: types.Message):
 async def help_command(message: types.Message):
     text = (f"Привет! Это бот канала {CHANNEL_LINK}. С моей помощью можно получить краткий гид мероприятий "
             "на определённый день, на выходные или по проходящим выставкам в городе.\n\n"
-            "Чтобы начать, укажите дату или нажмите на кнопку в меню.")
+            "Чтобы начать, укажите дату или нажмите на кнопку в меню." + _price_note())
     await message.answer(text,  parse_mode="Markdown", reply_markup= await show_menu('events'))
 
 

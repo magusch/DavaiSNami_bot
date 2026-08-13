@@ -1,12 +1,59 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-from config import MONTHES, LANG, TIMEZONE_HOUR
+from config import MONTHES, LANG, TIMEZONE_HOUR, BOT_LINK
 
 USER_TZ = timezone(timedelta(hours=TIMEZONE_HOUR))
 
 TELEGRAM_MESSAGE_LIMIT = 4096
 SAFE_MESSAGE_LIMIT = 4000  # запас на разметку/футер
+
+def date_str(date):
+    """Date (datetime|str) → 'YYYY-MM-DD'."""
+    if isinstance(date, str):
+        return date
+    return date.strftime('%Y-%m-%d')
+
+
+def webapp_event_link(event_id):
+    """Event card in the web app — similar events are shown there as well."""
+    return f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
+
+
+def webapp_link(*filters):
+    """Link to the web app event list with filters.
+
+    startapp: `events` plus one section per filter, separated by a DOUBLE
+    underscore: `events__date-weekend`, `events__date-20260815-20260816`,
+    `events__date-weekend__cat-concert-theater`. Latin letters only, no commas."""
+    parts = ['events'] + [f for f in filters if f]
+    return f"https://t.me/{BOT_LINK}?startapp={'__'.join(parts)}"
+
+
+def webapp_date_filter(date_from, date_to=None):
+    """Date section for startapp: a single day or a range, both as YYYYMMDD."""
+    day_from = date_str(date_from).replace('-', '')
+    if date_to:
+        day_to = date_str(date_to).replace('-', '')
+        if day_to != day_from:
+            return f"date-{day_from}-{day_to}"
+    return f"date-{day_from}"
+
+
+def webapp_search_filters(filters):
+    """Semantic search filters → startapp sections (dates, categories, price)."""
+    filters = filters or {}
+    sections = []
+    if filters.get('date_from'):
+        sections.append(webapp_date_filter(filters['date_from'], filters.get('date_to')))
+    categories = filters.get('category_ids') or []
+    if categories:
+        sections.append('cat-' + '-'.join(str(c) for c in categories))
+    if filters.get('free_only'):
+        sections.append('price-0')
+    elif filters.get('price_max'):
+        sections.append(f"price-{int(filters['price_max'])}")
+    return tuple(sections)
 
 
 def split_message(text: str, limit: int = SAFE_MESSAGE_LIMIT) -> list[str]:

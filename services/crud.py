@@ -1,6 +1,6 @@
 from database.session import db_session
 from database.models import DsnUser, DsnUserEvent, TelegramMonitor, Events2Post # SavedUserEvent, User,
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, update
 
 
 @db_session
@@ -101,6 +101,34 @@ async def toggle_balance(db, telegram_id: int) -> bool:
     if user:
         return user.balance
     return -1
+
+
+@db_session
+async def get_balance(db, telegram_id: int):
+    """User balance, or None when the user is not in the DB. Unlike toggle_balance
+    it does not conflate "no such user" with an actual balance value."""
+    user = await db.scalar(select(DsnUser).filter(DsnUser.telegram_id == telegram_id))
+    return user.balance if user else None
+
+
+@db_session
+async def charge_balance(db, telegram_id: int, cost: int):
+    """Charge `cost` in a single UPDATE: the affordability check and the debit at once.
+
+    Race-free, unlike the read-modify-write in change_balance where two quick taps
+    could both debit the same starting value. Returns the new balance, or None when
+    there were not enough gems or the user does not exist."""
+    if cost <= 0:
+        return await get_balance(telegram_id)
+    result = await db.execute(
+        update(DsnUser)
+        .where(DsnUser.telegram_id == telegram_id, DsnUser.balance >= cost)
+        .values(balance=DsnUser.balance - cost)
+        .returning(DsnUser.balance)
+    )
+    new_balance = result.scalar_one_or_none()
+    await db.commit()
+    return new_balance
 
 
 @db_session

@@ -43,6 +43,33 @@ async def fetch_exhibitions():
             return response_json
 
 
+async def fetch_similar_events(event_id, limit=10, wait_embedding=True):
+    """Similar events by embedding (GET /events/{id}/similar).
+
+    When the source event has no embedding yet the API answers 202
+    {status: pending, task_id}: we wait for the task and retry the request once.
+    Returns {'status', 'result'} or {'error': ...}."""
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}events/{event_id}/similar",
+                               headers=HEADERS, params={'limit': limit}) as response:
+            if response.status == 200:
+                return await response.json()
+            if response.status != 202:
+                return {"error": f"Ошибка API: {response.status}"}
+            data = await response.json()
+
+    task_id = data.get("task_id")
+    if not wait_embedding or not task_id:
+        return {"error": "Эмбеддинг события ещё не готов"}
+
+    # keep the wait short: this is a background suggestion, not worth stalling the user
+    status_result = await poll_semantic_status(task_id, max_retries=4, interval=1.0)
+    if isinstance(status_result, dict) and 'error' in status_result:
+        return status_result
+    return await fetch_similar_events(event_id, limit=limit, wait_embedding=False)
+
+
 async def check_status(task_id: str):
     """Wait and return result by task_id."""
     max_retries = 15

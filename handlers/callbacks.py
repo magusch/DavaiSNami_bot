@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard
+from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard, categories_menu
 from aiogram import types
 
 from services.utils import send_chunked
+from handlers.billing import open_billing
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ from services.process import process_day_events, process_weekday_events, process
 from services import crud
 from services import process
 from services import external_api
-from config import MENU, CHANNEL_LINK, BOT_LINK
+from config import MENU, CHANNEL_LINK, BOT_LINK, ACTION_COST, STARS_RATE, TOPUP_STARS
 from states import ReminderState
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -39,7 +40,11 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
             wait_message = await callback_query.message.answer(wait_text, reply_markup=await show_menu('back'))
 
     telegram_user_id = callback_query.from_user.id
+    cost = _action_cost(data)
     try:
+        billing = await open_billing(callback_query.message, telegram_user_id, cost)
+        if billing is None:
+            return                      # not enough gems, top-up offer already sent
         if data == 'weekday':
             await callback_query.message.answer('Выберите день недели', reply_markup=await show_menu('weekday'))
         elif data == 'events':
@@ -49,21 +54,21 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
         elif data in MENU['settings'].keys() or data in ['saved_events_old']:
             await process_settings_callback(callback_query)
         elif data in MENU['events'].keys():
-            not_minus_balance = await process_events_callback(callback_query)
+            not_minus_balance = await process_events_callback(callback_query, billing)
             if not not_minus_balance:
-                await crud.change_balance(telegram_user_id, -2)
+                await crud.charge_balance(telegram_user_id, cost)
         elif data.startswith('more:'):
-            not_minus_balance = await process_more_callback(callback_query)
+            not_minus_balance = await process_more_callback(callback_query, billing)
             if not not_minus_balance:
-                await crud.change_balance(telegram_user_id, -2)
+                await crud.charge_balance(telegram_user_id, cost)
         elif data.startswith('exmore:'):
-            not_minus_balance = await process_exhibitions_more_callback(callback_query)
+            not_minus_balance = await process_exhibitions_more_callback(callback_query, billing)
             if not not_minus_balance:
-                await crud.change_balance(telegram_user_id, -2)
+                await crud.charge_balance(telegram_user_id, cost)
         elif data in MENU['weekday'].keys():
-            not_minus_balance = await process_weekday_callback(callback_query)
+            not_minus_balance = await process_weekday_callback(callback_query, billing)
             if not not_minus_balance:
-                await crud.change_balance(telegram_user_id, -2)
+                await crud.charge_balance(telegram_user_id, cost)
         elif data in MENU['balance'].keys():
             await process_balance_callback(callback_query)
         elif data.startswith('sevent_'):
@@ -89,32 +94,53 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
             except Exception:
                 pass
 
-async def _send_feed(message, title, result, menu_key='events'):
-    answer = await process.footer_message(f"{title}\n{result.text}")
+# Paid callbacks are the ones that actually hit the API for listings. Menus,
+# categories, settings, "lucky" and "similar" are free.
+_FREE_CALLBACKS = ('events', 'settings', 'weekday', 'categories', 'lucky')
+
+
+def _action_cost(data):
+    """Gem price of a callback."""
+    if data in _FREE_CALLBACKS:
+        return 0
+    if (data in MENU['events'] or data in MENU['weekday']
+            or data.startswith(('more:', 'exmore:'))):
+        return ACTION_COST['feed']
+    return 0
+
+
+async def _send_feed(message, title, result, menu_key='events', billing=None):
+    answer = await process.feed_answer(result, title, billing)
     keyboard = await feed_more_keyboard(result, menu_key)
     await send_chunked(message, answer, parse_mode="Markdown",
                        reply_markup=keyboard, disable_web_page_preview=True)
 
 
-async def process_events_callback(callback_query: types.CallbackQuery):
+async def process_events_callback(callback_query: types.CallbackQuery, billing=None):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     data_command = callback_query.data
     events_menu = await show_menu('events')
     title = f"*{MENU['events'].get(data_command, '')}:*"
 
+    if data_command == 'categories':
+        await callback_query.message.answer('Выберите категорию',
+                                            reply_markup=await categories_menu())
+        return 1
+
     if data_command == 'exhibitions':
         result = await process_exhibitions(daynow)
-        answer = await process.footer_message(f"{title}\n{result.text}")
+        answer = await process.feed_answer(result, title, billing)
         keyboard = await exhibitions_more_keyboard(result)
         await send_chunked(callback_query.message, answer, parse_mode="Markdown",
                            reply_markup=keyboard, disable_web_page_preview=True)
         return 1 if not result.found else None
 
     if data_command == 'lucky':
-        result = await process_lucky_event(daynow)
+        result = await process_lucky_event(daynow, with_similar=True)
         answer = await process.footer_message(f"{title}\n{result.text}")
         sent_photo = False
-        if result.image:
+        # photo captions are capped at 1024 chars — send long text as its own message
+        if result.image and len(answer) <= 1024:
             img_bytes = await external_api.download_image(result.image)
             if img_bytes:
                 try:
@@ -144,11 +170,11 @@ async def process_events_callback(callback_query: types.CallbackQuery):
         await callback_query.message.answer('Неверная команда', reply_markup=events_menu)
         return 1
 
-    await _send_feed(callback_query.message, title, result)
+    await _send_feed(callback_query.message, title, result, billing=billing)
     return 1 if not result.found else None
 
 
-async def process_more_callback(callback_query: types.CallbackQuery):
+async def process_more_callback(callback_query: types.CallbackQuery, billing=None):
     """"More" button — the next feed page for the same period."""
     try:
         _, date_from, date_to, page = callback_query.data.split(':')
@@ -158,11 +184,11 @@ async def process_more_callback(callback_query: types.CallbackQuery):
         return 1
 
     result = await process.process_feed(date_from, date_to, page=page)
-    await _send_feed(callback_query.message, '*Ещё мероприятия:*', result)
+    await _send_feed(callback_query.message, '*Ещё мероприятия:*', result, billing=billing)
     return 1 if not result.found else None
 
 
-async def process_exhibitions_more_callback(callback_query: types.CallbackQuery):
+async def process_exhibitions_more_callback(callback_query: types.CallbackQuery, billing=None):
     """"More exhibitions" button — the next page of exhibitions."""
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     try:
@@ -172,21 +198,21 @@ async def process_exhibitions_more_callback(callback_query: types.CallbackQuery)
         return 1
 
     result = await process_exhibitions(daynow, page=page)
-    answer = await process.footer_message(f"*Ещё выставки:*\n{result.text}")
+    answer = await process.feed_answer(result, '*Ещё выставки:*', billing)
     keyboard = await exhibitions_more_keyboard(result)
     await send_chunked(callback_query.message, answer, parse_mode="Markdown",
                        reply_markup=keyboard, disable_web_page_preview=True)
     return 1 if not result.found else None
 
 
-async def process_weekday_callback(callback_query: types.CallbackQuery):
+async def process_weekday_callback(callback_query: types.CallbackQuery, billing=None):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
 
     data_command = callback_query.data
     weekday = list(MENU['weekday'].keys()).index(data_command)
 
     result = await process_weekday_events(weekday, daynow)
-    answer = await process.footer_message(result.text)
+    answer = await process.feed_answer(result, billing=billing)
     keyboard = await feed_more_keyboard(result, 'weekday')
     await send_chunked(callback_query.message, answer, reply_first=True, parse_mode="Markdown",
                        disable_web_page_preview=True, reply_markup=keyboard)
@@ -207,13 +233,16 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
             reply_markup=await show_menu('settings')
         )
     elif data_command == 'balance':
-        balance = await crud.toggle_balance(callback_query.from_user.id)
+        # get_balance returns None for "no such user" — the old toggle_balance
+        # mixed that up with a real negative balance and re-created the user
+        balance = await crud.get_balance(callback_query.from_user.id)
+        if balance is None:
+            await process.new_user(callback_query)
+            balance = await crud.get_balance(callback_query.from_user.id)
         await callback_query.message.answer(
-            f'Баланс: {balance}', parse_mode="Markdown",
+            process.balance_message(balance), parse_mode="Markdown",
             reply_markup=await show_menu('balance')
         )
-        if balance < 0:
-            await process.new_user(callback_query)
 
     elif data_command == 'saved_events' or data_command.startswith('sevent_'):
         await process_message_saved_event(callback_query, answer_message=None, old=0)
@@ -227,10 +256,10 @@ async def process_balance_callback(callback_query: types.CallbackQuery):
     if data_command == 'balance_add':
         await callback_query.message.answer_invoice(
             title="Пополнение баланса",
-            description="Пополни баланс через Telegram Stars",
+            description=f"{TOPUP_STARS} ⭐ Telegram Stars → {TOPUP_STARS * STARS_RATE} 💎 на баланс",
             payload="balance_topup",
             currency="XTR",
-            prices=[types.LabeledPrice(label="10 звёзд", amount=10)],
+            prices=[types.LabeledPrice(label=f"{TOPUP_STARS} ⭐", amount=TOPUP_STARS)],
             need_name=False,
             need_phone_number=False,
             need_email=False,
@@ -292,6 +321,13 @@ async def process_saved_events(callback_query, state=None):
             parse_mode="Markdown",
             reply_markup=await show_menu('cancel_saved_events')
         )
+    elif mod == 'sim':
+        # similar events go out as their own message; the saved list is redrawn by the
+        # caller afterwards (the "please wait" edit consumes the original one)
+        answer = await process.process_similar_message(event_id)
+        await callback_query.message.answer(answer, parse_mode="Markdown",
+                                            disable_web_page_preview=True)
+        return 1
     elif mod in ['dis', 'del']:
         answer = await process.toggle_saved_event(telegram_id, event_id, mod)
         if answer == 0:

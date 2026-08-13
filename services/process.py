@@ -6,9 +6,12 @@ import secrets
 from . import external_api
 from . import crud
 
-from config import CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES, WEEK_MENU
+from config import (CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES, WEEK_MENU,
+                    ACTION_COST, STARS_RATE, TOPUP_STARS, REFERRAL_BONUS)
 from keyboards import user_event_menu
 from . import utils
+from .utils import (date_str, webapp_link, webapp_event_link,
+                    webapp_date_filter, webapp_search_filters)
 
 
 class EventsResult(NamedTuple):
@@ -21,6 +24,27 @@ class EventsResult(NamedTuple):
         return self.count > 0
 
 
+
+class SearchResult(NamedTuple):
+    """Text search outcome. `engine` is what actually ran (keyword/semantic) and
+    decides the gem price of the query — semantic costs more."""
+    text: str
+    found: bool
+    image: str = None
+    engine: str = 'keyword'
+
+
+class WebappLink(NamedTuple):
+    """The "show all ..." web app link placed under a list.
+
+    `filters` — startapp sections ('date-weekend', 'cat-1-3', 'price-1000'),
+    `total` — how many events match those filters (used in the link text),
+    `noun` — which word to inflect (event/exhibition)."""
+    filters: tuple = ()
+    total: int = None
+    noun: str = 'events'
+
+
 class FeedResult(NamedTuple):
     """Diversified feed result plus the pagination data for the "More" button."""
     text: str
@@ -29,6 +53,7 @@ class FeedResult(NamedTuple):
     date_from: str = None
     date_to: str = None
     page: int = 0
+    webapp: WebappLink = None
 
     @property
     def found(self) -> bool:
@@ -40,6 +65,14 @@ FEED_PER_CATEGORY = 4
 
 EXHIBITIONS_LIMIT = 15
 EXHIBITIONS_FETCH = 100
+
+
+def exhibitions_webapp(total=None):
+    """Exhibitions link in the web app: by category alias, not by dates.
+    `total` is dropped when the batch hit EXHIBITIONS_FETCH — there may be more."""
+    if total is not None and total >= EXHIBITIONS_FETCH:
+        total = None
+    return WebappLink(filters=('cat-exhibition',), total=total, noun='exhibitions')
 
 
 def get_day(offset, daynow):
@@ -81,7 +114,7 @@ def build_event_message(events, is_dict=False):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
             link, label = post_url, title
         else:
-            link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
+            link = webapp_event_link(event_id)
             label = f"{title} 📱"
 
         if price:
@@ -107,7 +140,7 @@ def _event_link_line(event):
             post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
         link, label = post_url, title
     else:
-        link = f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
+        link = webapp_event_link(event_id)
         label = f"{title} 📱"
 
     if price:
@@ -157,25 +190,123 @@ def build_feed_message(events, window_start=None):
     return EventsResult(text='\n\n'.join(blocks) + '\n', count=cnt)
 
 
-async def footer_message(message):
-    return message.strip() + f'\n\n[@{BOT_LINK}](@{BOT_LINK})'
+class Billing(NamedTuple):
+    """How many gems the user has and what this action will cost.
+
+    An empty Billing() means the action is free or the user is not in the DB —
+    then no balance is shown in the footer."""
+    balance: int = None
+    cost: int = 0
+
+    def remaining(self, charged=True):
+        """Balance for the footer. charged=False when the reply is empty and nothing is debited."""
+        if self.balance is None:
+            return None
+        return self.balance - self.cost if charged else self.balance
 
 
-def _date_str(date):
-    """Date (datetime|str) → 'YYYY-MM-DD'."""
-    if isinstance(date, str):
-        return date
-    return date.strftime('%Y-%m-%d')
+def _left_after(balance, engine):
+    """Balance to show in the footer of a search reply: what remains once this
+    search is charged. None (nothing shown) when we don't know the balance."""
+    if balance is None:
+        return None
+    return balance - search_cost(engine)
 
 
-async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT):
+def search_cost(engine):
+    """Gem price of a text search by the engine that served it."""
+    return ACTION_COST.get(f'search_{engine}', 0)
+
+
+def balance_message(balance):
+    """Balance screen: the number alone means nothing without the price list."""
+    return (
+        f"💎 *Ваш баланс: {balance if balance is not None else 0}*\n\n"
+        f"Афиша — {ACTION_COST['feed']} 💎\n"
+        f"Поиск по слову — {ACTION_COST['search_keyword']} 💎\n"
+        f"Умный поиск текстом — {ACTION_COST['search_semantic']} 💎\n\n"
+        f"Пополнение: {TOPUP_STARS} ⭐ → {TOPUP_STARS * STARS_RATE} 💎.\n"
+        f"Рефералка: по {REFERRAL_BONUS} 💎 вам и другу."
+    )
+
+
+def not_enough_message(balance, cost):
+    """This is the one moment a user really learns the balance exists, so state
+    the price, what they have, and both ways to get more — all at once."""
+    return (
+        f"💎 *Не хватает самоцветов*\n\n"
+        f"Это действие стоит *{cost} 💎*, а у вас *{balance}*.\n\n"
+        f"Пополнить: {TOPUP_STARS} ⭐ → {TOPUP_STARS * STARS_RATE} 💎.\n"
+        f"Или позовите друга по своей ссылке — по {REFERRAL_BONUS} 💎 обоим."
+    )
+
+
+async def footer_message(message, balance=None):
+    footer = f'[@{BOT_LINK}](@{BOT_LINK})'
+    if balance is not None:
+        footer += f' · 💎 {balance}'
+    return message.strip() + f'\n\n{footer}'
+
+
+# Word forms for the link text: (1 item, 2-4, 5+).
+WEBAPP_NOUNS = {
+    'events': ('мероприятие', 'мероприятия', 'мероприятий'),
+    'exhibitions': ('выставку', 'выставки', 'выставок'),
+}
+
+
+def _plural(number, one, few, many):
+    """Russian noun form after a number: 21 мероприятие, 23 мероприятия, 25 мероприятий."""
+    tail = abs(number) % 100
+    if 11 <= tail <= 14:
+        return many
+    tail %= 10
+    if tail == 1:
+        return one
+    if 2 <= tail <= 4:
+        return few
+    return many
+
+
+def all_events_line(webapp, shown=0):
+    """The "show all 28 events" link line at the end of a list.
+
+    The count is included only when the filter holds more than we already showed,
+    otherwise the text is a plain "see all". Empty when there are no filters
+    (a bare keyword search has nothing to translate into a web app filter)."""
+    if not webapp or not webapp.filters:
+        return ''
+    one, few, many = WEBAPP_NOUNS.get(webapp.noun, WEBAPP_NOUNS['events'])
+    total = webapp.total or 0
+    if total > max(shown, 1):
+        text = f"Показать все {total} {_plural(total, one, few, many)}"
+    else:
+        # without a number the nominative plural is needed: «все мероприятия», «все выставки»
+        text = f"Посмотреть все {few}"
+    return f"\n📱 [{text}]({webapp_link(*webapp.filters)})\n"
+
+
+async def feed_answer(result, title=None, billing=None):
+    """The whole reply text: title + list + web app link + footer.
+    `billing` puts the remaining gems into the footer (we charge exactly when something was found)."""
+    body = f"{title}\n{result.text}" if title else result.text
+    body += all_events_line(getattr(result, 'webapp', None), result.count)
+    balance = billing.remaining(charged=result.found) if billing else None
+    return await footer_message(body, balance)
+
+
+async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT, webapp_filter=None):
     """Diversified event feed for a period (POST /events/feed/).
 
     One page = up to `limit` diverse events that fit into a single message.
     The next chunk = the same request with page+1 (the "More" button). Returns
-    a FeedResult with the has_more flag and the period bounds used to build that button."""
-    date_from_str = _date_str(date_from)
-    date_to_str = _date_str(date_to) if date_to else date_from_str
+    a FeedResult with the has_more flag and the period bounds used to build that button.
+
+    `webapp_filter` is the section for the "see all" link (e.g. 'date-weekend');
+    by default it is built from the period dates themselves."""
+    date_from_str = date_str(date_from)
+    date_to_str = date_str(date_to) if date_to else date_from_str
+    webapp_filter = webapp_filter or webapp_date_filter(date_from_str, date_to_str)
 
     params = {
         'date_from': date_from_str,
@@ -193,6 +324,8 @@ async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT):
     result = data.get('result', {}) or {}
     events = result.get('events', [])
     diverse_total = (result.get('request', {}) or {}).get('diverse_total', len(events))
+    # total_count is every event of the period under the filters: what the web app will show
+    webapp = WebappLink(filters=(webapp_filter,), total=result.get('total_count'))
 
     if not events:
         if page == 0:
@@ -201,15 +334,17 @@ async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT):
                 f'Мероприятий на {date_to_markdown(date_from_str)} не найдено\n\n'
                 f'Но может вам понравится это:\n{lucky.text}'
             )
-            return FeedResult(text=message, count=0)
+            return FeedResult(text=message, count=0, webapp=webapp)
         # page past the end of the feed — the user has scrolled through everything
         return FeedResult(text='Это были все мероприятия за этот период ✨', count=0,
-                          date_from=date_from_str, date_to=date_to_str, page=page)
+                          date_from=date_from_str, date_to=date_to_str, page=page,
+                          webapp=webapp)
 
     body = build_feed_message(events, window_start=date_from_str)
     has_more = (page + 1) * limit < diverse_total
     return FeedResult(text=body.text, count=body.count, has_more=has_more,
-                      date_from=date_from_str, date_to=date_to_str, page=page)
+                      date_from=date_from_str, date_to=date_to_str, page=page,
+                      webapp=webapp)
 
 
 # Backwards-compat: old name, now built on top of the feed (typed dates, etc.).
@@ -217,9 +352,14 @@ async def process_events(date_from, date_to=None, page=0):
     return await process_feed(date_from, date_to, page=page)
 
 
+# The nearest days are addressed by alias in the web app, not by date.
+DAY_WEBAPP_FILTERS = {0: 'date-today', 1: 'date-tomorrow'}
+
+
 async def process_day_events(offset, daynow, page=0):
     event_date = get_day(offset, daynow)
-    return await process_feed(event_date, page=page)
+    return await process_feed(event_date, page=page,
+                              webapp_filter=DAY_WEBAPP_FILTERS.get(offset))
 
 
 async def process_weekday_events(offset, daynow, page=0):
@@ -237,7 +377,7 @@ async def process_weekend_events(daynow, page=0):
     """Weekend — ONE feed request for the Sat–Sun range. The feed balances
     events across the two days, so the reply fits in one message (was 2–3)."""
     saturday, sunday = weekend_range(daynow)
-    return await process_feed(saturday, sunday, page=page)
+    return await process_feed(saturday, sunday, page=page, webapp_filter='date-weekend')
 
 
 async def process_exhibitions(daynow, page=0):
@@ -264,7 +404,8 @@ async def process_exhibitions(daynow, page=0):
 
     if not page_exhibs:
         text = 'Выставок не найдено' if page == 0 else 'Это были все выставки ✨'
-        return FeedResult(text=text, count=0, page=page)
+        return FeedResult(text=text, count=0, page=page,
+                          webapp=exhibitions_webapp(len(all_exhibs)))
 
     divided_dates_dict = get_divided_dates_dict(daynow)
     cnt_exhibs = 0
@@ -283,7 +424,7 @@ async def process_exhibitions(daynow, page=0):
                         post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
                 else:
                     exhib_id = exhib['id']
-                    post_url = f"https://t.me/{BOT_LINK}?startapp=event_{exhib_id}"
+                    post_url = webapp_event_link(exhib_id)
 
                 if exhib.get('place'):
                     place_name = exhib.get('place').get('place_name')
@@ -303,7 +444,8 @@ async def process_exhibitions(daynow, page=0):
     if cnt_exhibs == 0:
         message = 'Выставок не найдено'
 
-    return FeedResult(text=message, count=cnt_exhibs, has_more=has_more, page=page)
+    return FeedResult(text=message, count=cnt_exhibs, has_more=has_more, page=page,
+                      webapp=exhibitions_webapp(len(all_exhibs)))
 
 
 def get_divided_dates_dict(daynow):
@@ -326,7 +468,48 @@ def get_divided_dates_dict(daynow):
     return date_list
 
 
-async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hours=3)):
+SIMILAR_LIMIT = 3
+
+
+def _similar_line(event):
+    """One similar event: link, price and date, kept to a single compact line."""
+    line = _event_link_line(event)
+    date_str = _fmt_event_date(event.get('from_date'))
+    return f"{line} · {date_str}" if date_str else line
+
+
+async def process_similar_events(event_id, limit=SIMILAR_LIMIT):
+    """Similar events (GET /events/{id}/similar).
+
+    A hint, not the main content: when the API fails or the embedding is still
+    being computed we quietly return nothing and the "similar" block is skipped."""
+    data = await external_api.fetch_similar_events(event_id, limit=limit)
+    if not isinstance(data, dict) or 'error' in data:
+        return EventsResult(text='', count=0)
+
+    result = data.get('result') or {}
+    events = (result.get('events') or [])[:limit]
+    if not events:
+        return EventsResult(text='', count=0)
+
+    lines = [_similar_line(e) for e in events]
+    return EventsResult(text='\n'.join(lines) + '\n', count=len(lines))
+
+
+async def process_similar_message(event_id, limit=SIMILAR_LIMIT):
+    """Reply for the "similar" button in saved events: the list plus a card link."""
+    similar = await process_similar_events(event_id, limit=limit)
+    if not similar.found:
+        return 'Похожих мероприятий пока не нашлось, попробуйте позже.'
+    return (f"*Похожие мероприятия:*\n{similar.text}"
+            f"\n📱 [Ещё похожие в приложении]({webapp_event_link(event_id)})")
+
+
+async def process_lucky_event(daynow=None, with_similar=False):
+    # compute the date here when not given: a default argument would freeze at
+    # import time, and this bot stays up for weeks
+    if daynow is None:
+        daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     params = {
         'date_from': daynow.strftime('%Y-%m-%d'),
         'date_to': (daynow + timedelta(days=7)).strftime('%Y-%m-%d'),
@@ -341,7 +524,7 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
             if not post_url.startswith('http'):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
         else:
-            post_url = f"https://t.me/{BOT_LINK}?startapp=event_{event['id']}"
+            post_url = webapp_event_link(event['id'])
         event_address = event['address']
         if event.get('place'):
             event_address = event['place']['place_name']
@@ -352,6 +535,13 @@ async def process_lucky_event(daynow=datetime.now(timezone.utc) + timedelta(hour
         message += f" 📆 {date_to_markdown(event['from_date'])}\n"
         message += f" 📍 {event_address}\n"
         message += f" 💰 {event['price']}\n"
+
+        if with_similar:
+            similar = await process_similar_events(event['id'])
+            if similar.found:
+                message += f"\n*Похожее:*\n{similar.text}"
+                message += f"\n📱 [Ещё похожие в приложении]({webapp_event_link(event['id'])})\n"
+
         return EventsResult(text=message, count=1, image=event.get('image'))
 
     return EventsResult(text='', count=0)
@@ -436,7 +626,7 @@ def build_search_message(events):
                 post_url = f'https://t.me/{CHANNEL_LINK}/' + post_url
             link, label = post_url, title
         else:
-            link = f"https://t.me/{BOT_LINK}?startapp=event_{event.get('id')}"
+            link = webapp_event_link(event.get('id'))
             label = f"{title} 📱"
 
         date_str = _fmt_event_date(event.get('from_date'))
@@ -460,56 +650,75 @@ def _event_not_past(event, now):
         return True
 
 
-async def process_keyword_search(query):
-    """GET /search/. Возвращает (answer, found, image). found=False если ничего нет."""
+async def process_keyword_search(query, balance=None):
+    """GET /search/. Returns a SearchResult; found=False when there is nothing.
+    `balance` is the pre-charge balance, so the footer can show what is left."""
     result = await external_api.keyword_search(query)
     if 'error' in result:
-        return 'Не удалось выполнить поиск, попробуйте чуть позже.', False, None
+        return SearchResult('Не удалось выполнить поиск, попробуйте чуть позже.', False)
     now = datetime.now(timezone.utc)
     events = [e for e in result.get('events', []) if _event_not_past(e, now)]
     if not events:
-        return '', False, None
+        return SearchResult('', False)
     body = build_search_message(events)
-    return await footer_message(body.text), body.found, body.image
+    return SearchResult(await footer_message(body.text, _left_after(balance, 'keyword')),
+                        body.found, body.image)
 
 
-async def process_semantic_search(message_text, history=None):
-    """POST /search/semantic/. Возвращает (answer, found, image).
-    Всю фильтрацию (даты/категории/релевантность/ослабление при пустой выдаче)
-    держит API — бот ничего сам не отсекает."""
+async def process_semantic_search(message_text, history=None, balance=None):
+    """POST /search/semantic/. Returns a SearchResult.
+
+    All filtering (dates/categories/relevance/loosening on an empty result set)
+    stays on the API side — the bot drops nothing on its own. `balance` is the
+    pre-charge balance, so the footer can show what is left."""
     result = await external_api.semantic_search(message_text, history=history)
 
     if 'error' in result:
-        return 'Не удалось выполнить поиск, попробуйте ещё раз чуть позже.', False, None
+        return SearchResult('Не удалось выполнить поиск, попробуйте ещё раз чуть позже.',
+                            False, engine='semantic')
 
     if result.get('status') == 'not_event_search':
-        return (
+        return SearchResult(
             'Кажется, это не запрос мероприятия 🙂\n'
             'Спросите меня, например: «джазовый концерт в выходные» '
-            'или «бесплатные лекции на этой неделе».'
-        ), False, None
+            'или «бесплатные лекции на этой неделе».',
+            False, engine='semantic')
 
     query = result.get('query') or {}
-    events = result.get('result', {}).get('events', [])
+    inner = result.get('result', {}) or {}
+    events = inner.get('events', [])
+
+    # translate what the analyser understood into web app filters: dates, categories, price
+    webapp = WebappLink(filters=webapp_search_filters(query.get('filters')),
+                        total=inner.get('total_count'))
+
     if not events:
-        return 'По вашему запросу ничего не нашлось. Попробуйте переформулировать запрос.', False, None
+        answer = 'По вашему запросу ничего не нашлось. Попробуйте переформулировать запрос.'
+        # filters parsed but nothing matched — offer the app instead of a dead end
+        return SearchResult(answer + all_events_line(webapp), False, engine='semantic')
 
     body = build_search_message(events)
     intro = (result.get('reply') or '').strip()
     intro = f"{intro}\n\n" if intro else _semantic_header(query)
-    answer = intro + body.text
-    return await footer_message(answer), body.found, body.image
+    answer = intro + body.text + all_events_line(webapp, body.count)
+    return SearchResult(await footer_message(answer, _left_after(balance, 'semantic')),
+                        body.found, body.image, engine='semantic')
 
 
-async def process_text_search(message_text, history=None):
-    """Маршрутизация свободного текста: keyword → (fallback) semantic.
-    Возвращает (answer, found, image)."""
+async def process_text_search(message_text, history=None, allow_semantic=True, balance=None):
+    """Free-text routing: keyword → (fallback) semantic.
+    Returns a SearchResult; the handler prices the query by .engine.
+
+    `allow_semantic=False` means the user cannot afford semantic search: we return
+    engine 'semantic_needed' so the handler offers a top-up instead of emptiness."""
     if is_keyword_query(message_text):
-        answer, found, image = await process_keyword_search(message_text)
-        if found:
-            return answer, found, image
-        # ничего по ключевому слову — пробуем семантику
-    return await process_semantic_search(message_text, history=history)
+        result = await process_keyword_search(message_text, balance=balance)
+        if result.found:
+            return result
+        # nothing by keyword — fall back to semantic
+    if not allow_semantic:
+        return SearchResult('', False, engine='semantic_needed')
+    return await process_semantic_search(message_text, history=history, balance=balance)
 
 
 async def process_telegram_monitor(monitor_dict):
@@ -643,5 +852,5 @@ async def new_user(message):
 
 
 async def referral_click(referral_telegram_id, user_telegram_id):
-    await crud.change_balance(user_telegram_id, 100)
-    await crud.change_balance(referral_telegram_id, 100)
+    await crud.change_balance(user_telegram_id, REFERRAL_BONUS)
+    await crud.change_balance(referral_telegram_id, REFERRAL_BONUS)

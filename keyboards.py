@@ -1,5 +1,6 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from config import MENU, LANG, emoji_keyboard
+from config import MENU, LANG, emoji_keyboard, POPULAR_CATEGORIES
+from services.utils import webapp_link
 
 
 async def show_menu_keyboard(menu_key="events"):
@@ -68,6 +69,20 @@ async def exhibitions_more_keyboard(result, menu_key="events"):
     return await menu_with_more(f"exmore:{result.page + 1}", menu_key, text="➡️ Ещё выставки")
 
 
+async def categories_menu():
+    """Categories submenu: popular ones as direct web app links (no API calls at all),
+    the full filter list lives in the app behind "all categories"."""
+    buttons = [
+        InlineKeyboardButton(text=f"{emoji} {title}", url=webapp_link(f"cat-{alias}"))
+        for alias, title, emoji in POPULAR_CATEGORIES
+    ]
+    inline_keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    inline_keyboard.append([InlineKeyboardButton(text="📱 Все категории в приложении",
+                                                 url=webapp_link())])
+    inline_keyboard.append([InlineKeyboardButton(text="⬅ Назад", callback_data="events")])
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+
 async def week_menu():
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -89,6 +104,7 @@ async def user_event_menu(saved_events):
                     text=f"💤 Отключить {idx}" if event['remind_datetime'] else f"✅ Включить {idx}",
                     callback_data=f"sevent_dis_{event['id']}" if event['remind_datetime'] else f"sevent_enbl_{event['id']}"),
                 InlineKeyboardButton(text=f"❌ Удалить {idx}", callback_data=f"sevent_del_{event['id']}"),
+                InlineKeyboardButton(text=f"🔎 Похожие {idx}", callback_data=f"sevent_sim_{event['id']}"),
             ]
         )
     inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="settings"),

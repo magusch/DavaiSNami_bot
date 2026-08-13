@@ -6,26 +6,43 @@ from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
-from config import WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL
-from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard
+from config import (WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL,
+                    ACTION_COST, STARS_RATE)
+from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard, categories_menu
 
 from services import process
 import services.crud as crud
 import services.external_api as external_api
 import services.history as history_store
 from services.utils import send_chunked
+from handlers.billing import open_billing
 
 
 def _looks_like_date(text):
     """Свободный текст, начинающийся с цифры, трактуем как дату (старый путь)."""
     return bool(re.match(r'^\s*\d', text or ''))
 
+
+def _text_action_cost(message_text):
+    """Price of a text message in gems, decided before we do any work.
+
+    Menu items typed as text stay free — only the two paths that charge today
+    (a bare date and a free-text search) are priced and gated. Free text is
+    priced by the engine we try FIRST: keyword-ish queries start cheap."""
+    if (message_text in MENU['events'].values() or message_text in MENU['weekday'].values()
+            or message_text in MENU['settings'].values()):
+        return 0
+    if _looks_like_date(message_text):
+        return ACTION_COST['feed']
+    return process.search_cost('keyword' if process.is_keyword_query(message_text) else 'semantic')
+
 async def handle_message(message: types.Message):
     message_text = message.text
     if message.successful_payment:
         if message.successful_payment.invoice_payload == "balance_topup":
             user_id = message.from_user.id
-            stars_amount = message.successful_payment.total_amount*10
+            # keep the rate in one place: the /help and top-up texts use STARS_RATE too
+            stars_amount = message.successful_payment.total_amount * STARS_RATE
             await crud.change_balance(user_id, stars_amount)
             await message.answer(
                 f"Баланс пополнен на {stars_amount} ⭐️!",
@@ -65,16 +82,21 @@ async def handle_message(message: types.Message):
         wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
         try:
             message_text = message_text.lower().capitalize()
-            if message_text in [MENU['events']['weekday']]:
+            cost = _text_action_cost(message_text)
+            billing = await open_billing(message, message.from_user.id, cost)
+            if billing is None:
+                pass                    # not enough gems, top-up offer already sent
+            elif message_text in [MENU['events']['weekday']]:
                 answer = MENU['events']['weekday']
                 await message.reply(answer, parse_mode="Markdown",
                                     reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
             elif message_text == MENU['events']['lucky']:
                 daynow = datetime.now(timezone.utc) + timedelta(hours=3)
-                result = await process.process_lucky_event(daynow)
+                result = await process.process_lucky_event(daynow, with_similar=True)
                 answer = await process.footer_message(f"*{message_text.capitalize()}:*\n{result.text}")
                 sent_photo = False
-                if result.image:
+                # photo captions are capped at 1024 chars — send long text as its own message
+                if result.image and len(answer) <= 1024:
                     try:
                         await message.answer_photo(
                             result.image, caption=answer, parse_mode="Markdown",
@@ -87,7 +109,7 @@ async def handle_message(message: types.Message):
                     await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                        reply_markup=await show_menu('events'), disable_web_page_preview=True)
             elif message_text in MENU['events'].values():
-                answer, keyboard = await handle_date_command(message_text)
+                answer, keyboard = await handle_date_command(message_text, billing)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=keyboard, disable_web_page_preview=True)
             elif message_text in MENU['settings'].values():
@@ -95,20 +117,28 @@ async def handle_message(message: types.Message):
                 await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
                                      disable_web_page_preview=True)
             elif message_text in MENU['weekday'].values():
-                answer, keyboard = await handle_weekday_text(message_text)
+                answer, keyboard = await handle_weekday_text(message_text, billing)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=keyboard, disable_web_page_preview=True)
             elif _looks_like_date(message_text):
-                answer, found, keyboard = await handle_date_text(message_text)
+                answer, found, keyboard = await handle_date_text(message_text, billing)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=keyboard, disable_web_page_preview=True)
 
                 if found:
-                    await crud.change_balance(message.from_user.id, -2)
+                    await crud.charge_balance(message.from_user.id, ACTION_COST['feed'])
             else:
                 chat_id = message.from_user.id
                 history = history_store.get_history(chat_id)
-                answer, found, image = await process.process_text_search(message.text, history=history)
+                semantic_cost = ACTION_COST['search_semantic']
+                allow_semantic = billing.balance is None or billing.balance >= semantic_cost
+                search = await process.process_text_search(
+                    message.text, history=history,
+                    allow_semantic=allow_semantic, balance=billing.balance)
+                answer, found, image = search.text, search.found, search.image
+                if search.engine == 'semantic_needed':
+                    # keyword found nothing and the smart search is out of reach
+                    answer, image = process.not_enough_message(billing.balance, semantic_cost), None
                 history_store.add_message(chat_id, message.text)
 
                 sent_photo = False
@@ -132,7 +162,9 @@ async def handle_message(message: types.Message):
                                        reply_markup=await show_menu('events'), disable_web_page_preview=True)
 
                 if found:
-                    await crud.change_balance(message.from_user.id, -2)
+                    # semantic costs more than keyword: it burns an LLM call + vectors
+                    await crud.charge_balance(message.from_user.id,
+                                              process.search_cost(search.engine))
         finally:
             try:
                 await wait_message.delete()
@@ -147,10 +179,13 @@ async def handle_message(message: types.Message):
     await crud.create_telegram_monitor(user_monitor_dict)
 
 
-async def handle_date_command(text_message):
+async def handle_date_command(text_message, billing=None):
     """Text menu items (Today/Tomorrow/Weekend/Exhibitions) → feed.
     Returns (answer, keyboard); keyboard = menu + "More" when there are more pages."""
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
+
+    if text_message == MENU['events']['categories']:
+        return 'Выберите категорию', await categories_menu()
 
     if text_message == MENU['events']['today']:
         result = await process.process_day_events(0, daynow)
@@ -160,13 +195,13 @@ async def handle_date_command(text_message):
         result = await process.process_weekend_events(daynow)
     elif text_message == MENU['events']['exhibitions']:
         result = await process.process_exhibitions(daynow)
-        answer = await process.footer_message(f"*{text_message}:*\n{result.text}")
+        answer = await process.feed_answer(result, f"*{text_message}:*", billing)
         keyboard = await exhibitions_more_keyboard(result)
         return answer, keyboard
     else:
         return 'Неверная команда', await show_menu('events')
 
-    answer = await process.footer_message(f"*{text_message}:*\n{result.text}")
+    answer = await process.feed_answer(result, f"*{text_message}:*", billing)
     keyboard = await feed_more_keyboard(result)
     return answer, keyboard
 
@@ -175,7 +210,7 @@ async def handle_setting(message_text):
     pass
 
 
-async def handle_date_text(message_text):
+async def handle_date_text(message_text, billing=None):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
 
     parts = re.split(r'[.,\-/ ]', message_text)
@@ -217,7 +252,7 @@ async def handle_date_text(message_text):
 
         # Получаем события на указанную дату
         result = await process.process_events(date_with_events)
-        answer = await process.footer_message(result.text)
+        answer = await process.feed_answer(result, billing=billing)
         keyboard = await feed_more_keyboard(result)
         return answer, result.found, keyboard
 
@@ -226,13 +261,13 @@ async def handle_date_text(message_text):
         return answer, False, await show_menu('events')
 
 
-async def handle_weekday_text(message_text):
+async def handle_weekday_text(message_text, billing=None):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
 
     weekday = WEEK_MENU[LANG].index(message_text.capitalize())
 
     result = await process.process_weekday_events(weekday, daynow)
-    answer = await process.footer_message(result.text)
+    answer = await process.feed_answer(result, billing=billing)
     keyboard = await feed_more_keyboard(result, 'weekday')
     return answer, keyboard
 

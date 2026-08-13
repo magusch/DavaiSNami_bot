@@ -27,6 +27,7 @@ MENU = {
         'tomorrow':    'Завтра',
         'weekend':     'Выходные',
         'exhibitions': 'Выставки',
+        'categories':  'Категории',
         'lucky':       'Мне повезёт',
         'weekday':     'День Недели',
         'settings':    'Настройки',
@@ -66,6 +67,26 @@ MENU = {
     }
 }
 
+ACTION_COST = {
+    'feed':            2,   # today / tomorrow / weekend / weekday / date / "more"
+    'exhibitions':     2,
+    'search_keyword':  2,
+    'search_semantic': 10,
+}
+
+STARS_RATE = 10
+TOPUP_STARS = 10          # invoice size in ⭐
+REFERRAL_BONUS = 100      # gems both sides get for a referral
+
+POPULAR_CATEGORIES = [
+    ('concert',    'Концерты',   '🎸'),
+    ('theater',    'Театр',      '🎭'),
+    ('exhibition', 'Выставки',   '🎨'),
+    ('party',      'Вечеринки',  '🎉'),
+    ('standup',    'Стендап',    '🎤'),
+    ('lecture',    'Лекции',     '📚'),
+]
+
 EXHIBITIONS_PHRASES = {
     'two_week':     'Скоро заканчиваются',
     'next_month':   'Заканчиваются в следующем месяце',
@@ -88,7 +109,8 @@ emoji_keyboard = {
     # General events menu
     'today':       '🔥',          'tomorrow':    '🦜',
     'weekend':     '🏄‍♂️',        'exhibitions': '🎨',
-    'lucky':       '🍀',          'weekday':     '🌍',
+    'categories':  '🎭',          'lucky':       '🍀',
+    'weekday':     '🌍',
     'settings':    '⚙️',          'events':      '🧩',
 
     # Week day menu
