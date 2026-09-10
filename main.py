@@ -6,21 +6,38 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram import types
 
+from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import CallbackQuery, ErrorEvent
 from aiogram.fsm.context import FSMContext
 
 import config
 from handlers import callbacks, commands, messages
 from keyboards import show_menu
+from services import admin_relay
 from states import ReminderState
 
 logger = logging.getLogger(__name__)
 
 dp = Dispatcher()
 
+def _is_undeliverable(exception: Exception) -> bool:
+    """Чат нам недоступен — отвечать в него и дёргать админа бессмысленно."""
+    if isinstance(exception, TelegramForbiddenError):
+        return True                     # юзер заблокировал бота / кикнул из чата
+    if isinstance(exception, TelegramBadRequest):
+        text = str(exception).lower()
+        return ('topic must be specified' in text or 'chat not found' in text
+                or 'user is deactivated' in text)
+    return False
+
 
 @dp.errors()
 async def error_handler(event: ErrorEvent):
+    if _is_undeliverable(event.exception):
+        logger.warning("Chat is unreachable, skipping error report: %s", event.exception)
+        return True
+
     logger.exception("Unhandled error: %s", event.exception)
     update = event.update
     error_text = "Произошла ошибка, попробуйте позже."
@@ -38,8 +55,8 @@ async def error_handler(event: ErrorEvent):
                 )
             except Exception:
                 logger.exception("Failed to send fallback menu after callback error")
-    except Exception:
-        logger.exception("Failed to send error message to user")
+    except Exception as send_error:
+        logger.warning("Failed to send error message to user: %s", send_error)
 
     # Отправляем ошибку админу
     if config.ID_ADMIN:
@@ -66,6 +83,11 @@ async def error_handler(event: ErrorEvent):
 # @dp.message(CommandStart())
 # async def command_start_handler(message: types.Message, command: CommandObject) -> None:
 #     await commands.start_message(message, command)
+
+
+@dp.message(F.chat.type != ChatType.PRIVATE)
+async def non_private_message_handler(message: types.Message) -> None:
+    await admin_relay.relay_to_admin(message, "Сообщение не из лички")
 
 
 @dp.message(Command(commands=['start', 'help', 'paysupport', 'support', 'terms']))
@@ -114,7 +136,7 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state: FSMC
 async def main() -> None:
     bot = Bot(token=config.TOKEN)
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, drop_pending_updates=True)
     finally:
         await bot.session.close()
 

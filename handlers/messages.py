@@ -14,6 +14,7 @@ from services import process
 import services.crud as crud
 import services.external_api as external_api
 import services.history as history_store
+import services.admin_relay as admin_relay
 from services.utils import send_chunked
 from handlers.billing import open_billing
 
@@ -74,6 +75,7 @@ async def handle_message(message: types.Message):
             )
     else:
         if not message_text:
+            await admin_relay.relay_to_admin(message, "Нетекстовое сообщение в боте")
             await message.answer(
                 "Я понимаю только текстовые сообщения. Пожалуйста, выберите пункт меню или введите дату.",
                 reply_markup=await show_menu('events'),
