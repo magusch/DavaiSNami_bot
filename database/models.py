@@ -17,6 +17,17 @@ class TelegramMonitor(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class City(Base):
+    """A city (Django app `city`). `all` is the pseudo-city of shared rows."""
+    __tablename__ = 'city_city'
+    code = Column(String(8), primary_key=True)
+    name = Column(String)
+    is_active = Column(Boolean)
+    channel_id = Column(BigInteger)
+    channel_link = Column(String)
+    sort_order = Column(Integer)
+
+
 class Events2Post(Base):
     __tablename__ = 'events_events2post'
     id = Column(Integer, primary_key=True)
@@ -25,6 +36,7 @@ class Events2Post(Base):
     post_url = Column(String)
     price = Column(String)
     from_date = Column(DateTime(timezone=True))
+    city_id = Column(String)
     #dsn_user_events = relationship("DsnUserEvent", back_populates="event")
 
 
@@ -38,6 +50,7 @@ class DsnUser(Base):
     telegram_id = Column(BigInteger, nullable=True, index=True)
     balance = Column(Integer, default=100, nullable=True)
     weekend_guide = Column(Boolean, default=False, nullable=True)
+    city_id = Column(String(8), ForeignKey('city_city.code'), nullable=True)  # NULL = default city
 
     full_name = Column(String, nullable=True)
 

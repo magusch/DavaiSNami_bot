@@ -1,8 +1,11 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard, categories_menu
+from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard, categories_menu, \
+    selection_picker_keyboard, parse_picker, city_menu, CITY_CALLBACK
 from aiogram import types
+from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
 
 from services.utils import send_chunked
 from handlers.billing import open_billing
@@ -14,7 +17,9 @@ from services.process import process_day_events, process_weekday_events, process
 from services import crud
 from services import process
 from services import external_api
-from config import MENU, CHANNEL_LINK, BOT_LINK, ACTION_COST, STARS_RATE, TOPUP_STARS
+from services import city as city_service
+from config import MENU, CHANNEL_LINK, BOT_LINK, ACTION_COST, STARS_RATE, TOPUP_STARS, \
+    REMIND_OPTIONS, DEFAULT_REMIND_HOURS
 from states import ReminderState
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -71,6 +76,8 @@ async def process_menu_callback(callback_query: types.CallbackQuery, state=None)
                 await crud.charge_balance(telegram_user_id, cost)
         elif data in MENU['balance'].keys():
             await process_balance_callback(callback_query)
+        elif data.startswith(CITY_CALLBACK):
+            await process_city_callback(callback_query)
         elif data.startswith('sevent_'):
             if await process_saved_events(callback_query, state=state):
                 await process_settings_callback(callback_query)
@@ -120,15 +127,16 @@ async def process_events_callback(callback_query: types.CallbackQuery, billing=N
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
     data_command = callback_query.data
     events_menu = await show_menu('events')
+    city = await city_service.get_user_city(callback_query.from_user.id)
     title = f"*{MENU['events'].get(data_command, '')}:*"
 
     if data_command == 'categories':
         await callback_query.message.answer('Выберите категорию',
-                                            reply_markup=await categories_menu())
+                                            reply_markup=await categories_menu(city))
         return 1
 
     if data_command == 'exhibitions':
-        result = await process_exhibitions(daynow)
+        result = await process_exhibitions(daynow, city=city)
         answer = await process.feed_answer(result, title, billing)
         keyboard = await exhibitions_more_keyboard(result)
         await send_chunked(callback_query.message, answer, parse_mode="Markdown",
@@ -136,7 +144,7 @@ async def process_events_callback(callback_query: types.CallbackQuery, billing=N
         return 1 if not result.found else None
 
     if data_command == 'lucky':
-        result = await process_lucky_event(daynow, with_similar=True)
+        result = await process_lucky_event(daynow, with_similar=True, city=city)
         answer = await process.footer_message(f"{title}\n{result.text}")
         sent_photo = False
         # photo captions are capped at 1024 chars — send long text as its own message
@@ -161,11 +169,11 @@ async def process_events_callback(callback_query: types.CallbackQuery, billing=N
 
     # diversified feed: today / tomorrow / weekend
     if data_command == 'today':
-        result = await process_day_events(0, daynow)
+        result = await process_day_events(0, daynow, city=city)
     elif data_command == 'tomorrow':
-        result = await process_day_events(1, daynow)
+        result = await process_day_events(1, daynow, city=city)
     elif data_command == 'weekend':
-        result = await process_weekend_events(daynow)
+        result = await process_weekend_events(daynow, city=city)
     else:
         await callback_query.message.answer('Неверная команда', reply_markup=events_menu)
         return 1
@@ -183,7 +191,8 @@ async def process_more_callback(callback_query: types.CallbackQuery, billing=Non
         await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
         return 1
 
-    result = await process.process_feed(date_from, date_to, page=page)
+    city = await city_service.get_user_city(callback_query.from_user.id)
+    result = await process.process_feed(date_from, date_to, page=page, city=city)
     await _send_feed(callback_query.message, '*Ещё мероприятия:*', result, billing=billing)
     return 1 if not result.found else None
 
@@ -197,7 +206,8 @@ async def process_exhibitions_more_callback(callback_query: types.CallbackQuery,
         await callback_query.message.answer('Неверная команда', reply_markup=await show_menu('events'))
         return 1
 
-    result = await process_exhibitions(daynow, page=page)
+    city = await city_service.get_user_city(callback_query.from_user.id)
+    result = await process_exhibitions(daynow, page=page, city=city)
     answer = await process.feed_answer(result, '*Ещё выставки:*', billing)
     keyboard = await exhibitions_more_keyboard(result)
     await send_chunked(callback_query.message, answer, parse_mode="Markdown",
@@ -211,7 +221,8 @@ async def process_weekday_callback(callback_query: types.CallbackQuery, billing=
     data_command = callback_query.data
     weekday = list(MENU['weekday'].keys()).index(data_command)
 
-    result = await process_weekday_events(weekday, daynow)
+    city = await city_service.get_user_city(callback_query.from_user.id)
+    result = await process_weekday_events(weekday, daynow, city=city)
     answer = await process.feed_answer(result, billing=billing)
     keyboard = await feed_more_keyboard(result, 'weekday')
     await send_chunked(callback_query.message, answer, reply_first=True, parse_mode="Markdown",
@@ -224,7 +235,10 @@ async def process_weekday_callback(callback_query: types.CallbackQuery, billing=
 async def process_settings_callback(callback_query: types.CallbackQuery):
     data_command = callback_query.data
     if data_command == 'city':
-        await callback_query.message.answer('Выберите город', reply_markup=await show_menu('city'))
+        current = await city_service.get_user_city(callback_query.from_user.id)
+        await callback_query.message.answer(
+            f"Сейчас: *{city_service.city_name(current)}*. Выберите город:", parse_mode="Markdown",
+            reply_markup=await city_menu(await city_service.active_cities(), current))
     elif data_command == 'weekend_guide':
         is_enabled = await crud.toggle_weekend_guide(callback_query.from_user.id)
         status = "включен" if is_enabled else "выключен"
@@ -249,6 +263,19 @@ async def process_settings_callback(callback_query: types.CallbackQuery):
 
     elif data_command == 'saved_events_old':
         await process_message_saved_event(callback_query, old=1)
+
+
+async def process_city_callback(callback_query: types.CallbackQuery):
+    """city:<code> — remember the city; the feed, search and app links follow it."""
+    code = callback_query.data[len(CITY_CALLBACK):]
+    if not await crud.get_user_by_telegram(callback_query.from_user.id):
+        await process.new_user(callback_query)
+    if await city_service.set_user_city(callback_query.from_user.id, code):
+        text = f"🏙 Город: *{city_service.city_name(code)}*. Афиша и поиск теперь по нему."
+    else:
+        text = "Этот город пока недоступен."
+    await callback_query.message.answer(text, parse_mode="Markdown",
+                                        reply_markup=await show_menu('events'))
 
 
 async def process_balance_callback(callback_query: types.CallbackQuery):
@@ -288,10 +315,146 @@ async def process_balance_callback(callback_query: types.CallbackQuery):
         )
 
 
+def _private_picker(callback):
+    """Picker state of the pressed message — only in private chat: in the channel
+    the same save_event: button is shared by all readers and must not change."""
+    message = callback.message
+    if not isinstance(message, types.Message) or message.chat.type != ChatType.PRIVATE:
+        return None
+    return parse_picker(message.reply_markup)
+
+
+async def _redraw_picker(callback, picker, saved=(), unsaved=(), remind_hours=None):
+    """Redraw buttons and the "Сохранено N из M" line after a tap."""
+    if not picker:
+        return
+    saved_ids = (picker['saved_ids'] | set(saved)) - set(unsaved)
+    hours = remind_hours or picker['remind_hours']
+    markup = await selection_picker_keyboard(picker['selection_id'], picker['events'],
+                                             picker['webapp_url'], saved_ids, hours)
+    message = callback.message
+    lines = message.html_text.split('\n')
+    if len(lines) > 1:
+        lines[1] = process.picker_status_line(len(saved_ids), len(picker['events']), hours)
+    try:
+        await message.edit_text('\n'.join(lines), parse_mode="HTML",
+                                disable_web_page_preview=True, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if 'not modified' not in str(e):
+            logger.warning("Failed to redraw the digest picker: %s", e)
+
+
+async def _log_favourite(callback, action, picker=None):
+    """Favourites analytics: what was pressed, where, and from which digest."""
+    where = 'private' if isinstance(callback.message, types.Message) \
+        and callback.message.chat.type == ChatType.PRIVATE else 'channel'
+    message = f"{callback.data} {action} {where}"
+    if picker:
+        message += f" sel={picker['selection_id']}"
+    try:
+        await crud.create_telegram_monitor({
+            'telegram_id': callback.from_user.id,
+            'telegram_info': f"{callback.from_user.username} ({callback.from_user.first_name} {callback.from_user.last_name})",
+            'message': message,
+            'type': 'favourite',
+        })
+    except Exception:
+        logger.exception("Failed to log favourite action")
+
+
 async def process_save_event(callback):
+    """save_event:<event_id> — from the digest picker or from a channel post.
+    Picker: ⭐ saves, ✅ removes. Not registered yet → open the bot with
+    /start save-<id>, it registers and saves."""
     event_id = int(callback.data.split(":")[1])
-    user_event_dict = {'telegram_id': callback.from_user.id, 'event_id': event_id}
-    return await process.process_user_event(user_event_dict)
+    user = await crud.get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await _log_favourite(callback, 'redirect')
+        await callback.answer(url=f"https://t.me/{BOT_LINK}?start=save-{event_id}")
+        return
+
+    picker = _private_picker(callback)
+    if picker and event_id in picker['saved_ids']:
+        event = await process.remove_user_event(user.id, event_id)
+        name = process.short_event_name(event.title) if event else 'мероприятие'
+        await callback.answer(f"Убрал «{name}» из избранного")
+        await _redraw_picker(callback, picker, unsaved=[event_id])
+        await _log_favourite(callback, 'unsave', picker)
+        return
+
+    hours = picker['remind_hours'] if picker else DEFAULT_REMIND_HOURS
+    event, created = await process.save_user_event(user.id, event_id, remind_hours=hours)
+    if not event:
+        await callback.answer("Не нашёл это мероприятие", show_alert=True)
+        return
+    name = process.short_event_name(event.title)
+    text = f"Сохранил «{name}»" if created else f"«{name}» уже в избранном"
+    if not picker:
+        # a channel post: say where the saved list lives
+        text += f". Список — в боте @{BOT_LINK}"
+        if created:
+            text += f", напомню {REMIND_OPTIONS[hours]} до начала"
+    await callback.answer(text)
+    await _redraw_picker(callback, picker, saved=[event_id])
+    await _log_favourite(callback, 'save' if created else 'already', picker)
+
+
+async def process_save_all(callback):
+    """save_all:<selection_id> — every event of the digest post into favourites."""
+    selection_id = int(callback.data.split(":")[1])
+    user = await crud.get_user_by_telegram(callback.from_user.id)
+    if not user:
+        await callback.answer(url=f"https://t.me/{BOT_LINK}?start=pick-{selection_id}")
+        return
+
+    status, _, events = await process.fetch_selection_events(selection_id)
+    if status == 'not_found':
+        await callback.answer("Эта подборка уже недоступна", show_alert=True)
+        return
+    if status == 'empty':
+        await callback.answer("Все мероприятия из этого поста уже прошли", show_alert=True)
+        return
+    if status != 'ok':
+        await callback.answer("Не получилось сохранить, попробуйте чуть позже", show_alert=True)
+        return
+
+    picker = _private_picker(callback)
+    hours = picker['remind_hours'] if picker else DEFAULT_REMIND_HOURS
+    saved_ids, created_count = [], 0
+    for event in events:
+        saved, created = await process.save_user_event(user.id, event['id'], remind_hours=hours)
+        if saved:
+            saved_ids.append(event['id'])
+            created_count += created
+    await callback.answer(f"Сохранил {created_count}" if created_count else "Всё уже в избранном")
+    await _redraw_picker(callback, picker, saved=saved_ids)
+    await _log_favourite(callback, f"saved={created_count}", picker)
+
+
+async def process_remind_select(callback):
+    """remind_sel:<hours> — reminder offset for the events saved from this picker
+    (and for the ones saved from it later)."""
+    hours = int(callback.data.split(":")[1])
+    if hours not in REMIND_OPTIONS:
+        await callback.answer()
+        return
+    user = await crud.get_user_by_telegram(callback.from_user.id)
+    picker = _private_picker(callback)
+    if not user or not picker:
+        await callback.answer()
+        return
+    await process.set_remind_before(user.id, picker['saved_ids'], hours)
+    await callback.answer(f"Напомню {REMIND_OPTIONS[hours]} до начала")
+    await _redraw_picker(callback, picker, remind_hours=hours)
+    await _log_favourite(callback, 'remind', picker)
+
+
+async def process_favourites_list(callback):
+    """"My favourites" under the picker: the saved list as a new message,
+    the picker itself stays as it is."""
+    await callback.answer()
+    await process_message_saved_event(callback)
+    await _log_favourite(callback, 'open', _private_picker(callback))
 
 
 async def process_referral_start(callback):

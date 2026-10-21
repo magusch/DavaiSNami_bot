@@ -13,11 +13,20 @@ BOT_LINK = os.getenv('bot_url', 'DavaiSNamiBot')
 
 TIMEZONE_HOUR = int(os.getenv('TIMEZONE', 3))
 
+DEFAULT_CITY = os.getenv('default_city', 'spb')
+CITY_NAMES = {
+    'spb': 'Санкт-Петербург',
+    'kzn': 'Казань',
+}
+
 DATABASE_URL = os.getenv('DATABASE_URL')
 LANG = os.getenv('language', 'ru')
 
 API_URL = os.getenv('API_URL')
 API_TOKEN = os.getenv('API_TOKEN')
+
+REMIND_OPTIONS = {1: 'за 1 ч', 5: 'за 5 ч', 24: 'за день'}
+DEFAULT_REMIND_HOURS = 5
 
 
 
@@ -36,13 +45,9 @@ MENU = {
         'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
         'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вск', 'events': '⬅ Назад'
     },
-    'city': {
-        'spb':      'Санкт-Петербург',
-        'settings': '⬅ Назад'
-    },
     'settings': {
         'events':           'Мероприятия',
-       # '🏙 Выбор города': 'city',
+        'city':             '🏙 Город',
         'weekend_guide':    '🌅 Гайд на выходные',
         'saved_events':     '⭐ Сохранённые Мероприятия',
         #'reminders':       'Напоминания',

@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import html
+import re
 from typing import NamedTuple
 import random
 import secrets
@@ -7,7 +9,8 @@ from . import external_api
 from . import crud
 
 from config import (CHANNEL_LINK, BOT_LINK, EXHIBITIONS_PHRASES, MONTHES, WEEK_MENU,
-                    ACTION_COST, STARS_RATE, TOPUP_STARS, REFERRAL_BONUS)
+                    ACTION_COST, STARS_RATE, TOPUP_STARS, REFERRAL_BONUS,
+                    REMIND_OPTIONS, DEFAULT_REMIND_HOURS)
 from keyboards import user_event_menu
 from . import utils
 from .utils import (date_str, webapp_link, webapp_event_link,
@@ -39,10 +42,12 @@ class WebappLink(NamedTuple):
 
     `filters` — startapp sections ('date-weekend', 'cat-1-3', 'price-1000'),
     `total` — how many events match those filters (used in the link text),
-    `noun` — which word to inflect (event/exhibition)."""
+    `noun` — which word to inflect (event/exhibition),
+    `city` — whose events the app should open (None = default city)."""
     filters: tuple = ()
     total: int = None
     noun: str = 'events'
+    city: str = None
 
 
 class FeedResult(NamedTuple):
@@ -67,12 +72,12 @@ EXHIBITIONS_LIMIT = 15
 EXHIBITIONS_FETCH = 100
 
 
-def exhibitions_webapp(total=None):
+def exhibitions_webapp(total=None, city=None):
     """Exhibitions link in the web app: by category alias, not by dates.
     `total` is dropped when the batch hit EXHIBITIONS_FETCH — there may be more."""
     if total is not None and total >= EXHIBITIONS_FETCH:
         total = None
-    return WebappLink(filters=('cat-exhibition',), total=total, noun='exhibitions')
+    return WebappLink(filters=('cat-exhibition',), total=total, noun='exhibitions', city=city)
 
 
 def get_day(offset, daynow):
@@ -283,7 +288,7 @@ def all_events_line(webapp, shown=0):
     else:
         # without a number the nominative plural is needed: «все мероприятия», «все выставки»
         text = f"Посмотреть все {few}"
-    return f"\n📱 [{text}]({webapp_link(*webapp.filters)})\n"
+    return f"\n📱 [{text}]({webapp_link(*webapp.filters, city=webapp.city)})\n"
 
 
 async def feed_answer(result, title=None, billing=None):
@@ -295,7 +300,8 @@ async def feed_answer(result, title=None, billing=None):
     return await footer_message(body, balance)
 
 
-async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT, webapp_filter=None):
+async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT, webapp_filter=None,
+                       city=None):
     """Diversified event feed for a period (POST /events/feed/).
 
     One page = up to `limit` diverse events that fit into a single message.
@@ -316,7 +322,7 @@ async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT, webapp
         'per_category': FEED_PER_CATEGORY,
         'category': [-11],
     }
-    data = await external_api.fetch_feed(params)
+    data = await external_api.fetch_feed(params, city=city)
 
     if 'error' in data:
         return FeedResult(text=f"Не удалось получить мероприятия: {data['error']}", count=0)
@@ -325,11 +331,11 @@ async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT, webapp
     events = result.get('events', [])
     diverse_total = (result.get('request', {}) or {}).get('diverse_total', len(events))
     # total_count is every event of the period under the filters: what the web app will show
-    webapp = WebappLink(filters=(webapp_filter,), total=result.get('total_count'))
+    webapp = WebappLink(filters=(webapp_filter,), total=result.get('total_count'), city=city)
 
     if not events:
         if page == 0:
-            lucky = await process_lucky_event()
+            lucky = await process_lucky_event(city=city)
             message = (
                 f'Мероприятий на {date_to_markdown(date_from_str)} не найдено\n\n'
                 f'Но может вам понравится это:\n{lucky.text}'
@@ -348,23 +354,23 @@ async def process_feed(date_from, date_to=None, page=0, limit=FEED_LIMIT, webapp
 
 
 # Backwards-compat: old name, now built on top of the feed (typed dates, etc.).
-async def process_events(date_from, date_to=None, page=0):
-    return await process_feed(date_from, date_to, page=page)
+async def process_events(date_from, date_to=None, page=0, city=None):
+    return await process_feed(date_from, date_to, page=page, city=city)
 
 
 # The nearest days are addressed by alias in the web app, not by date.
 DAY_WEBAPP_FILTERS = {0: 'date-today', 1: 'date-tomorrow'}
 
 
-async def process_day_events(offset, daynow, page=0):
+async def process_day_events(offset, daynow, page=0, city=None):
     event_date = get_day(offset, daynow)
     return await process_feed(event_date, page=page,
-                              webapp_filter=DAY_WEBAPP_FILTERS.get(offset))
+                              webapp_filter=DAY_WEBAPP_FILTERS.get(offset), city=city)
 
 
-async def process_weekday_events(offset, daynow, page=0):
+async def process_weekday_events(offset, daynow, page=0, city=None):
     event_date = get_weekday(offset, daynow)
-    return await process_feed(event_date, page=page)
+    return await process_feed(event_date, page=page, city=city)
 
 
 def weekend_range(daynow):
@@ -373,14 +379,15 @@ def weekend_range(daynow):
     return saturday, saturday + timedelta(days=1)
 
 
-async def process_weekend_events(daynow, page=0):
+async def process_weekend_events(daynow, page=0, city=None):
     """Weekend — ONE feed request for the Sat–Sun range. The feed balances
     events across the two days, so the reply fits in one message (was 2–3)."""
     saturday, sunday = weekend_range(daynow)
-    return await process_feed(saturday, sunday, page=page, webapp_filter='date-weekend')
+    return await process_feed(saturday, sunday, page=page, webapp_filter='date-weekend',
+                              city=city)
 
 
-async def process_exhibitions(daynow, page=0):
+async def process_exhibitions(daynow, page=0, city=None):
     """Exhibitions (category 11) with their own layout by end date
     (Ending soon / Next month / Others). Show at most EXHIBITIONS_LIMIT at a
     time; the rest are reachable via the "More" button (page+1)."""
@@ -390,7 +397,7 @@ async def process_exhibitions(daynow, page=0):
         'category': [11],
         'fields': ['id', 'title', 'post_url', 'price', 'to_date', 'address', 'place'],
     }
-    exhibitions = await external_api.fetch_events(params)
+    exhibitions = await external_api.fetch_events(params, city=city)
 
     if 'error' in exhibitions:
         return FeedResult(text=f"Ошибка при получении выставок: {exhibitions['error']}", count=0)
@@ -405,7 +412,7 @@ async def process_exhibitions(daynow, page=0):
     if not page_exhibs:
         text = 'Выставок не найдено' if page == 0 else 'Это были все выставки ✨'
         return FeedResult(text=text, count=0, page=page,
-                          webapp=exhibitions_webapp(len(all_exhibs)))
+                          webapp=exhibitions_webapp(len(all_exhibs), city))
 
     divided_dates_dict = get_divided_dates_dict(daynow)
     cnt_exhibs = 0
@@ -445,7 +452,7 @@ async def process_exhibitions(daynow, page=0):
         message = 'Выставок не найдено'
 
     return FeedResult(text=message, count=cnt_exhibs, has_more=has_more, page=page,
-                      webapp=exhibitions_webapp(len(all_exhibs)))
+                      webapp=exhibitions_webapp(len(all_exhibs), city))
 
 
 def get_divided_dates_dict(daynow):
@@ -505,7 +512,7 @@ async def process_similar_message(event_id, limit=SIMILAR_LIMIT):
             f"\n📱 [Ещё похожие в приложении]({webapp_event_link(event_id)})")
 
 
-async def process_lucky_event(daynow=None, with_similar=False):
+async def process_lucky_event(daynow=None, with_similar=False, city=None):
     # compute the date here when not given: a default argument would freeze at
     # import time, and this bot stays up for weeks
     if daynow is None:
@@ -516,8 +523,8 @@ async def process_lucky_event(daynow=None, with_similar=False):
         'limit': 100,
         'category': [-11]
     }
-    events = await external_api.fetch_events(params)
-    if events['result']:
+    events = await external_api.fetch_events(params, city=city)
+    if events.get('result'):
         event = random.choice(events['result']['events'])
         post_url = event['post_url']
         if post_url:
@@ -650,10 +657,10 @@ def _event_not_past(event, now):
         return True
 
 
-async def process_keyword_search(query, balance=None):
+async def process_keyword_search(query, balance=None, city=None):
     """GET /search/. Returns a SearchResult; found=False when there is nothing.
     `balance` is the pre-charge balance, so the footer can show what is left."""
-    result = await external_api.keyword_search(query)
+    result = await external_api.keyword_search(query, city=city)
     if 'error' in result:
         return SearchResult('Не удалось выполнить поиск, попробуйте чуть позже.', False)
     now = datetime.now(timezone.utc)
@@ -665,13 +672,13 @@ async def process_keyword_search(query, balance=None):
                         body.found, body.image)
 
 
-async def process_semantic_search(message_text, history=None, balance=None):
+async def process_semantic_search(message_text, history=None, balance=None, city=None):
     """POST /search/semantic/. Returns a SearchResult.
 
     All filtering (dates/categories/relevance/loosening on an empty result set)
     stays on the API side — the bot drops nothing on its own. `balance` is the
     pre-charge balance, so the footer can show what is left."""
-    result = await external_api.semantic_search(message_text, history=history)
+    result = await external_api.semantic_search(message_text, history=history, city=city)
 
     if 'error' in result:
         return SearchResult('Не удалось выполнить поиск, попробуйте ещё раз чуть позже.',
@@ -690,7 +697,7 @@ async def process_semantic_search(message_text, history=None, balance=None):
 
     # translate what the analyser understood into web app filters: dates, categories, price
     webapp = WebappLink(filters=webapp_search_filters(query.get('filters')),
-                        total=inner.get('total_count'))
+                        total=inner.get('total_count'), city=city)
 
     if not events:
         answer = 'По вашему запросу ничего не нашлось. Попробуйте переформулировать запрос.'
@@ -705,27 +712,58 @@ async def process_semantic_search(message_text, history=None, balance=None):
                         body.found, body.image, engine='semantic')
 
 
-async def process_text_search(message_text, history=None, allow_semantic=True, balance=None):
+async def process_text_search(message_text, history=None, allow_semantic=True, balance=None,
+                              city=None):
     """Free-text routing: keyword → (fallback) semantic.
     Returns a SearchResult; the handler prices the query by .engine.
 
     `allow_semantic=False` means the user cannot afford semantic search: we return
     engine 'semantic_needed' so the handler offers a top-up instead of emptiness."""
     if is_keyword_query(message_text):
-        result = await process_keyword_search(message_text, balance=balance)
+        result = await process_keyword_search(message_text, balance=balance, city=city)
         if result.found:
             return result
         # nothing by keyword — fall back to semantic
     if not allow_semantic:
         return SearchResult('', False, engine='semantic_needed')
-    return await process_semantic_search(message_text, history=history, balance=balance)
+    return await process_semantic_search(message_text, history=history, balance=balance,
+                                         city=city)
 
 
 async def process_telegram_monitor(monitor_dict):
     await crud.create_telegram_monitor(monitor_dict)
 
 
+async def save_user_event(user_id, event_id, remind_hours=DEFAULT_REMIND_HOURS):
+    """Save an event to favourites with a reminder `remind_hours` before the start.
+    from_date is stored in UTC, the reminder is UTC as well.
+    Returns (event, created): event=None when there is no such event,
+    created=False when it was already saved (no duplicate row, reminder kept)."""
+    events = await crud.get_event_by_ids([int(event_id)])
+    if not events:
+        return None, False
+    event = events[0]
+    remind = event.from_date - timedelta(hours=remind_hours) if event.from_date else None
+    existing = await crud.save_event_for_user(user_id=user_id, event_id=event.id, remind_datetime=remind)
+    return event, existing is None
+
+
+async def remove_user_event(user_id, event_id):
+    """Remove from favourites; returns the event (for its title) or None."""
+    await crud.toggle_remind_events(user_id, event_id, -1)
+    events = await crud.get_event_by_ids([int(event_id)])
+    return events[0] if events else None
+
+
+async def set_remind_before(user_id, event_ids, remind_hours):
+    """Move the reminders of the given saved events to `remind_hours` before the start."""
+    for event in await crud.get_event_by_ids([int(i) for i in event_ids]):
+        if event.from_date:
+            await crud.edit_time_reminder(user_id, event.id, event.from_date - timedelta(hours=remind_hours))
+
+
 async def process_user_event(user_event_dict):
+    """Save by event_id or post_id; returns the saved Events2Post or False."""
     if 'user_id' not in user_event_dict and 'telegram_id' in user_event_dict:
         user = await crud.get_user_by_telegram(user_event_dict['telegram_id'])
         if user:
@@ -737,20 +775,87 @@ async def process_user_event(user_event_dict):
 
     if 'event_id' not in user_event_dict and 'post_id' in user_event_dict:
         event = await crud.get_event_by_telegram(user_event_dict['post_id'])
-        if event:
-            user_event_dict.update({
-                'event_id': event.id,
-                'remind_datetime': event.from_date - timedelta(hours=5)
-            })
-        else:
+        if not event:
             return False
-    user_event_to_db = {
-        'user_id': user_event_dict['user_id'],
-        'event_id': user_event_dict['event_id'],
-        'remind_datetime': user_event_dict.get('remind_datetime')
-    }
-    await crud.save_event_for_user(**user_event_to_db)
-    return True
+        user_event_dict['event_id'] = event.id
+
+    event, _ = await save_user_event(user_event_dict['user_id'], user_event_dict['event_id'])
+    return event or False
+
+
+def short_event_name(title, limit=25):
+    """Button label: the quoted part of the title without the emoji prefix,
+    «Кинопоказ «Ветка сирени»» → «Ветка сирени», cut to ~`limit` chars."""
+    title = (title or '').strip()
+    quoted = re.search(r'«([^«»]+)»', title)
+    name = quoted.group(1) if quoted else re.sub(r'^[^\w«"]+', '', title)
+    name = name.strip() or title
+    return name if len(name) <= limit else name[:limit - 1].rstrip() + '…'
+
+
+def remind_note(event, remind_hours=DEFAULT_REMIND_HOURS):
+    """«Напомню за 5 ч до начала» only when the reminder is still ahead."""
+    if event.from_date and event.from_date - timedelta(hours=remind_hours) > datetime.now(timezone.utc):
+        return f"Напомню {REMIND_OPTIONS[remind_hours]} до начала."
+    return ''
+
+
+def picker_status_line(saved, total, remind_hours=DEFAULT_REMIND_HOURS):
+    """Second line of the digest picker; redrawn on every ⭐ tap."""
+    remind = f"напомню {REMIND_OPTIONS[remind_hours]} до начала"
+    if not saved:
+        return remind[0].upper() + remind[1:] + '.'
+    return f"Сохранено {saved} из {total} · {remind}"
+
+
+class SelectionPicker(NamedTuple):
+    """Digest post → list of its events to save one by one (HTML text).
+    status: ok | not_found | empty | error; events: [{'id', 'label'}] in post order,
+    saved_ids: which of them the user already has in favourites."""
+    status: str
+    text: str = ''
+    events: list = ()
+    saved_ids: frozenset = frozenset()
+    webapp_url: str = None
+    city: str = None
+
+
+async def fetch_selection_events(selection_id):
+    """(status, name, events) — only the events shown in the post, in post order."""
+    data = await external_api.fetch_selection(selection_id)
+    if data.get('not_found'):
+        return 'not_found', None, []
+    if 'error' in data or not data.get('result'):
+        return 'error', None, []
+    result = data['result']
+    selection = result.get('selection') or {}
+    by_id = {e['id']: e for e in result.get('events') or []}
+    events = [by_id[i] for i in selection.get('shown_ids') or [] if i in by_id]
+    return ('ok' if events else 'empty'), selection.get('name'), events
+
+
+async def process_selection_picker(selection_id, user_id):
+    status, name, events = await fetch_selection_events(selection_id)
+    if status != 'ok':
+        return SelectionPicker(status=status)
+
+    already = {e.event_id for e in await crud.get_saved_user_event(user_id)}
+    saved_ids = frozenset(e['id'] for e in events if e['id'] in already)
+
+    header = f"⭐ «{html.escape(name)}» — что сохранить?" if name else "⭐ Что сохранить?"
+    lines = [header, picker_status_line(len(saved_ids), len(events)), ""]
+    picker_events = []
+    for idx, event in enumerate(events, start=1):
+        title = (event.get('title') or 'Без названия').strip()
+        date = _fmt_event_date(event.get('from_date'))
+        link = f'<a href="{webapp_event_link(event["id"])}">{html.escape(title)}</a>'
+        lines.append(f"{idx}. {link}" + (f" — {date}" if date else ''))
+        picker_events.append({'id': event['id'], 'label': f"{idx} {short_event_name(title)}"})
+
+    # a selection belongs to one city — the app should open that city's list
+    city = events[0].get('city_id')
+    return SelectionPicker(status='ok', text='\n'.join(lines), events=picker_events,
+                           saved_ids=saved_ids, webapp_url=webapp_link(city=city), city=city)
 
 
 async def process_saved_user_event(user_id=None, telegram_id=None, old=0):

@@ -1,5 +1,5 @@
 from database.session import db_session
-from database.models import DsnUser, DsnUserEvent, TelegramMonitor, Events2Post # SavedUserEvent, User,
+from database.models import DsnUser, DsnUserEvent, TelegramMonitor, Events2Post, City # SavedUserEvent, User,
 from sqlalchemy import select, or_, update
 
 
@@ -189,3 +189,28 @@ async def create_telegram_monitor(db, monitor_dict: dict):
     await db.commit()
     return monitor
 
+
+
+
+@db_session
+async def get_user_city(db, telegram_id: int):
+    """dsn_user.city_id; None when the user is not in the DB or has no city."""
+    return await db.scalar(select(DsnUser.city_id).filter(DsnUser.telegram_id == telegram_id))
+
+
+@db_session
+async def set_user_city(db, telegram_id: int, city_id: str) -> bool:
+    """False when there is no such user (nothing was updated)."""
+    result = await db.execute(update(DsnUser).where(DsnUser.telegram_id == telegram_id)
+                              .values(city_id=city_id))
+    await db.commit()
+    return result.rowcount > 0
+
+
+@db_session
+async def get_active_cities(db):
+    """Active cities from city_city, without the 'all' pseudo-city."""
+    result = await db.execute(
+        select(City).filter(City.is_active.is_(True), City.code != 'all')
+        .order_by(City.sort_order, City.code))
+    return result.scalars().all()

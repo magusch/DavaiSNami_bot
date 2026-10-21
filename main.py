@@ -13,7 +13,7 @@ from aiogram.fsm.context import FSMContext
 
 import config
 from handlers import callbacks, commands, messages
-from keyboards import show_menu
+from keyboards import show_menu, FAV_LIST_CALLBACK
 from services import admin_relay
 from states import ReminderState
 
@@ -111,10 +111,22 @@ async def command_text_handler(message: types.Message) -> None:
 
 @dp.callback_query(F.data.startswith("save_event:"))
 async def save_post_callback(callback: CallbackQuery):
-    if await callbacks.process_save_event(callback):
-        await callback.answer(f"Пост с event_id={callback.data.split(':')[-1]} сохранён!")
-    else:
-        await callback.answer("Пост не сохранён!", show_alert=True)
+    await callbacks.process_save_event(callback)
+
+
+@dp.callback_query(F.data.startswith("save_all:"))
+async def save_all_callback(callback: CallbackQuery):
+    await callbacks.process_save_all(callback)
+
+
+@dp.callback_query(F.data.startswith("remind_sel:"))
+async def remind_select_callback(callback: CallbackQuery):
+    await callbacks.process_remind_select(callback)
+
+
+@dp.callback_query(F.data == FAV_LIST_CALLBACK)
+async def favourites_list_callback(callback: CallbackQuery):
+    await callbacks.process_favourites_list(callback)
 
 
 @dp.callback_query(F.data.startswith("referral:"))

@@ -5,8 +5,23 @@ from config import API_URL, API_TOKEN
 
 HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
 
-async def fetch_events(params, endpoint='events/valid/'):
-    """Отправляет асинхронный запрос на API и получает список событий."""
+
+def _with_city(params, city):
+    """Collection requests take the city as `city` (query or top-level JSON);
+    without it the API answers for the default city. Requests by id never get one:
+    a city that differs from the row's city is a 400."""
+    params = dict(params or {})
+    if city:
+        params['city'] = city
+    return params
+
+
+async def fetch_events(params, endpoint='events/valid/', city=None):
+    """Отправляет асинхронный запрос на API и получает список событий.
+    `city` is ignored for an `ids` request: ids are global, favourites span cities."""
+
+    if 'ids' not in params:
+        params = _with_city(params, city)
 
     async with aiohttp.ClientSession() as session:
         async with session.post(API_URL + endpoint, headers=HEADERS, json=params) as response:
@@ -21,17 +36,20 @@ async def fetch_events(params, endpoint='events/valid/'):
             return response_json
 
 
-async def fetch_feed(params):
+async def fetch_feed(params, city=None):
     """Diversified feed (POST /events/feed/): balanced across categories and
     dates. Same filters and response shape as /events/valid/, plus
     result.request.diverse_total for pagination. See instruction/api_event_feed.md."""
-    return await fetch_events(params, endpoint='events/feed/')
+    return await fetch_events(params, endpoint='events/feed/', city=city)
 
-async def fetch_exhibitions():
-    """Отправляет асинхронный запрос на API и получает список выставок."""
-    
+async def fetch_exhibitions(city=None):
+    """Отправляет асинхронный запрос на API и получает список выставок.
+    Legacy table without a city (SPb only); the bot builds exhibitions from
+    events/valid/ category 11 instead."""
+
     async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL + 'tasks/get-exhibitions/', headers=HEADERS) as response:
+        async with session.post(API_URL + 'tasks/get-exhibitions/', headers=HEADERS,
+                                params=_with_city({}, city)) as response:
             if response.status != 200:
                 return {"error": f"Ошибка API: {response.status}"}
 
@@ -68,6 +86,21 @@ async def fetch_similar_events(event_id, limit=10, wait_embedding=True):
     if isinstance(status_result, dict) and 'error' in status_result:
         return status_result
     return await fetch_similar_events(event_id, limit=limit, wait_embedding=False)
+
+
+async def fetch_selection(selection_id, limit=50):
+    """Digest selection (GET /content-generator/selection/{id}/): result.selection
+    {id, name, shown_ids} + result.events (past events are already filtered out).
+    Returns {'status', 'result'}, {'not_found': True} on 404, or {'error': ...}."""
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}content-generator/selection/{selection_id}/",
+                               headers=HEADERS, params={'limit': limit}) as response:
+            if response.status == 404:
+                return {"not_found": True}
+            if response.status != 200:
+                return {"error": f"Ошибка API: {response.status}"}
+            return await response.json()
 
 
 async def check_status(task_id: str):
@@ -116,10 +149,10 @@ async def download_image(url, timeout=6, max_bytes=5 * 1024 * 1024):
         return None
 
 
-async def keyword_search(query, type='event', limit=10):
+async def keyword_search(query, type='event', limit=10, city=None):
     """Синхронный keyword-поиск (GET /search/). Возвращает {events, places}."""
 
-    params = {'query': query, 'type': type, 'limit': limit}
+    params = _with_city({'query': query, 'type': type, 'limit': limit}, city)
     async with aiohttp.ClientSession() as session:
         async with session.get(API_URL + 'search/', headers=HEADERS, params=params) as response:
             if response.status != 200:
@@ -127,18 +160,18 @@ async def keyword_search(query, type='event', limit=10):
             return await response.json()
 
 
-async def semantic_search(message, history=None, limit=8, max_distance=None):
+async def semantic_search(message, history=None, limit=8, max_distance=None, city=None):
     """Семантический поиск (POST /search/semantic/ + поллинг tasks/status/).
 
     Возвращает внутренний результат задачи {status, query, result:{events,...}}
     либо {"error": ...}."""
 
-    payload = {
+    payload = _with_city({
         "message": message,
         "limit": limit,
         "max_distance": max_distance,
         "history": history or [],
-    }
+    }, city)
     async with aiohttp.ClientSession() as session:
         async with session.post(API_URL + 'search/semantic/', headers=HEADERS, json=payload) as response:
             if response.status not in (200, 202):
@@ -173,17 +206,21 @@ async def poll_semantic_status(task_id: str, max_retries: int = 20, interval: fl
     return {"error": "Превышено время ожидания семантического поиска"}
 
 
-async def create_post_by_ai(event_data):
-    """Send async request to API for making post."""
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL + 'create_post_by_ai/', headers=HEADERS, json=event_data) as response:
-            if response.status != 200:
-                return {"error": f"Ошибка API: {response.status}"}
+async def create_post_by_ai(event_data, city=None):
+    """Send async request to API for making post. The events land in the
+    moderation queue of `city`.
 
-            response_json = await response.json()
+    Answers {task_id} right away; the AI parsing takes longer than any sensible
+    wait, so we don't poll the task — a 200 means "accepted"."""
 
-            if "task_id" in response_json:
-                return await check_status(response_json["task_id"])
-
-            return response_json
+    event_data = _with_city(event_data, city)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(API_URL + 'create_post_by_ai/', headers=HEADERS, json=event_data,
+                                    timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status != 200:
+                    body = (await response.text())[:300]
+                    return {"error": f"Ошибка API: {response.status} {body}".strip()}
+                return await response.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        return {"error": f"API недоступен: {e!r}"}

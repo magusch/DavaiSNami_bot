@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-from config import MONTHES, LANG, TIMEZONE_HOUR, BOT_LINK
+from config import MONTHES, LANG, TIMEZONE_HOUR, BOT_LINK, DEFAULT_CITY
 
 USER_TZ = timezone(timedelta(hours=TIMEZONE_HOUR))
 
@@ -20,13 +20,14 @@ def webapp_event_link(event_id):
     return f"https://t.me/{BOT_LINK}?startapp=event_{event_id}"
 
 
-def webapp_link(*filters):
+def webapp_link(*filters, city=None):
     """Link to the web app event list with filters.
 
     startapp: `events` plus one section per filter, separated by a DOUBLE
     underscore: `events__date-weekend`, `events__date-20260815-20260816`,
     `events__date-weekend__cat-concert-theater`. Latin letters only, no commas."""
-    parts = ['events'] + [f for f in filters if f]
+    city_part = [f'city-{city}'] if city and city != DEFAULT_CITY else []
+    parts = ['events'] + city_part + [f for f in filters if f]
     return f"https://t.me/{BOT_LINK}?startapp={'__'.join(parts)}"
 
 

@@ -1,10 +1,22 @@
+import re
+
 from aiogram import types
 from config import CHANNEL_LINK, ACTION_COST, STARS_RATE, TOPUP_STARS, REFERRAL_BONUS
-from keyboards import show_menu
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from keyboards import show_menu, selection_picker_keyboard, city_menu
+from services.utils import webapp_link
 
 import services.crud as crud
+from services import city as city_service
 from services.process import process_user_event
 from services import process
+
+# /start payloads, always <kind>-<id> with a hyphen:
+# pick-<selection_id> — pick events from a digest post,
+# save-<event_id> — save one event (also where a channel ⭐ leads before /start),
+# referral-<telegram_id>,
+# city-<code> — set the user's city (bot link from a city channel).
+START_PAYLOAD = re.compile(r'(pick|save|referral)-(\d+)|city-([a-z]+)')
 
 
 async def process_command_handler(message: types.Message, command):
@@ -36,26 +48,79 @@ async def start_command(message: types.Message, command):
         user = await crud.get_user_by_telegram(message.from_user.id)
         new_user = True
 
-    if command.args:
-        events_menu = await show_menu('events')
-        if "save-" in command.args and user:
-            event_id = command.args.split('-')[1].strip()
-            if await process_user_event({'user_id': user.id, 'event_id': int(event_id), 'telegram_id': message.from_user.id}):
-                await message.answer(f"Пост сохранён! {command.args}", reply_markup=events_menu)
-        elif 'referral-' in command.args:  # and new_user
-            referral_id = int(command.args.split("-")[1].strip())
-            if new_user:
-                await process.referral_click(referral_id, message.from_user.id)
-                await message.answer(
-                    "Вы успешно зарегистрировались по реферальной ссылке!",
-                    reply_markup=events_menu,
-                )
-            else:
-                await message.answer("Вы уже были зарегистрированы!", reply_markup=events_menu)
-    else:
+    payload = START_PAYLOAD.fullmatch(command.args.strip()) if command.args else None
+    if not payload:
         await help_command(message)
+        await ask_city_if_unset(message)
+        return
+
+    events_menu = await show_menu('events')
+    if payload.group(3):
+        await city_start(message, payload.group(3))
+        return
+
+    kind, object_id = payload.group(1), int(payload.group(2))
+    if kind == 'pick':
+        await selection_picker(message, user, object_id)
+    elif kind == 'save':
+        event = await process_user_event({'user_id': user.id, 'event_id': object_id})
+        if event:
+            await city_service.adopt_city(message.from_user.id, event.city_id)
+            text = f"⭐ Сохранил «{event.title}».\n{process.remind_note(event)}".strip()
+            await message.answer(text, reply_markup=events_menu)
+        else:
+            await message.answer("Не нашёл это мероприятие.", reply_markup=events_menu)
+    elif kind == 'referral':
+        if new_user:
+            await process.referral_click(object_id, message.from_user.id)
+            await message.answer(
+                "Вы успешно зарегистрировались по реферальной ссылке!",
+                reply_markup=events_menu,
+            )
+        else:
+            await message.answer("Вы уже были зарегистрированы!", reply_markup=events_menu)
+        await ask_city_if_unset(message)
 
 
+async def ask_city_if_unset(message: types.Message):
+    """Ask for the city on /start while dsn_user.city_id is NULL."""
+    if await city_service.get_user_city(message.from_user.id, default=None) is not None:
+        return
+    cities = await city_service.active_cities()
+    if len(cities) < 2:
+        return
+    await message.answer("🏙 Из какого вы города? Афиша и поиск будут по нему, "
+                         "поменять можно в ⚙️ Настройках.",
+                         reply_markup=await city_menu(cities, back=False))
+
+
+async def selection_picker(message: types.Message, user, selection_id: int):
+    """/start pick-<selection_id>: events of a digest post, a ⭐ for each."""
+    picker = await process.process_selection_picker(selection_id, user.id)
+    if picker.status == 'ok':
+        await city_service.adopt_city(message.from_user.id, picker.city)
+        keyboard = await selection_picker_keyboard(selection_id, picker.events,
+                                                   picker.webapp_url, picker.saved_ids)
+        await message.answer(picker.text, parse_mode="HTML", disable_web_page_preview=True,
+                             reply_markup=keyboard)
+    elif picker.status == 'empty':
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📱 Актуальные мероприятия", url=webapp_link())],
+            *(await show_menu('events')).inline_keyboard,
+        ])
+        await message.answer("Все мероприятия из этого поста уже прошли.", reply_markup=keyboard)
+    elif picker.status == 'not_found':
+        await message.answer("Эта подборка уже недоступна.", reply_markup=await show_menu('events'))
+    else:
+        await message.answer("Не получилось загрузить подборку, попробуйте чуть позже.",
+                             reply_markup=await show_menu('events'))
+
+
+async def city_start(message: types.Message, code: str):
+    """/start city-<code>: set the city, then the usual greeting."""
+    if await city_service.set_user_city(message.from_user.id, code):
+        await message.answer(f"🏙 Город: *{city_service.city_name(code)}*", parse_mode="Markdown")
+    await help_command(message)
 
 
 def _price_note():

@@ -15,6 +15,7 @@ import services.crud as crud
 import services.external_api as external_api
 import services.history as history_store
 import services.admin_relay as admin_relay
+from services import city as city_service
 from services.utils import send_chunked
 from handlers.billing import open_billing
 
@@ -84,6 +85,7 @@ async def handle_message(message: types.Message):
         wait_message = await message.answer('Немного подождите...', reply_markup=types.ReplyKeyboardRemove())
         try:
             message_text = message_text.lower().capitalize()
+            city = await city_service.get_user_city(message.from_user.id)
             cost = _text_action_cost(message_text)
             billing = await open_billing(message, message.from_user.id, cost)
             if billing is None:
@@ -94,7 +96,7 @@ async def handle_message(message: types.Message):
                                     reply_markup=await show_menu('weekday'), disable_web_page_preview=True)
             elif message_text == MENU['events']['lucky']:
                 daynow = datetime.now(timezone.utc) + timedelta(hours=3)
-                result = await process.process_lucky_event(daynow, with_similar=True)
+                result = await process.process_lucky_event(daynow, with_similar=True, city=city)
                 answer = await process.footer_message(f"*{message_text.capitalize()}:*\n{result.text}")
                 sent_photo = False
                 # photo captions are capped at 1024 chars — send long text as its own message
@@ -111,7 +113,7 @@ async def handle_message(message: types.Message):
                     await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                        reply_markup=await show_menu('events'), disable_web_page_preview=True)
             elif message_text in MENU['events'].values():
-                answer, keyboard = await handle_date_command(message_text, billing)
+                answer, keyboard = await handle_date_command(message_text, billing, city)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=keyboard, disable_web_page_preview=True)
             elif message_text in MENU['settings'].values():
@@ -119,11 +121,11 @@ async def handle_message(message: types.Message):
                 await message.answer("⚙️ Настройки", parse_mode="Markdown", reply_markup=await show_menu('settings'),
                                      disable_web_page_preview=True)
             elif message_text in MENU['weekday'].values():
-                answer, keyboard = await handle_weekday_text(message_text, billing)
+                answer, keyboard = await handle_weekday_text(message_text, billing, city)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=keyboard, disable_web_page_preview=True)
             elif _looks_like_date(message_text):
-                answer, found, keyboard = await handle_date_text(message_text, billing)
+                answer, found, keyboard = await handle_date_text(message_text, billing, city)
                 await send_chunked(message, answer, reply_first=True, parse_mode="Markdown",
                                    reply_markup=keyboard, disable_web_page_preview=True)
 
@@ -136,7 +138,7 @@ async def handle_message(message: types.Message):
                 allow_semantic = billing.balance is None or billing.balance >= semantic_cost
                 search = await process.process_text_search(
                     message.text, history=history,
-                    allow_semantic=allow_semantic, balance=billing.balance)
+                    allow_semantic=allow_semantic, balance=billing.balance, city=city)
                 answer, found, image = search.text, search.found, search.image
                 if search.engine == 'semantic_needed':
                     # keyword found nothing and the smart search is out of reach
@@ -181,22 +183,22 @@ async def handle_message(message: types.Message):
     await crud.create_telegram_monitor(user_monitor_dict)
 
 
-async def handle_date_command(text_message, billing=None):
+async def handle_date_command(text_message, billing=None, city=None):
     """Text menu items (Today/Tomorrow/Weekend/Exhibitions) → feed.
     Returns (answer, keyboard); keyboard = menu + "More" when there are more pages."""
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
 
     if text_message == MENU['events']['categories']:
-        return 'Выберите категорию', await categories_menu()
+        return 'Выберите категорию', await categories_menu(city)
 
     if text_message == MENU['events']['today']:
-        result = await process.process_day_events(0, daynow)
+        result = await process.process_day_events(0, daynow, city=city)
     elif text_message == MENU['events']['tomorrow']:
-        result = await process.process_day_events(1, daynow)
+        result = await process.process_day_events(1, daynow, city=city)
     elif text_message == MENU['events']['weekend']:
-        result = await process.process_weekend_events(daynow)
+        result = await process.process_weekend_events(daynow, city=city)
     elif text_message == MENU['events']['exhibitions']:
-        result = await process.process_exhibitions(daynow)
+        result = await process.process_exhibitions(daynow, city=city)
         answer = await process.feed_answer(result, f"*{text_message}:*", billing)
         keyboard = await exhibitions_more_keyboard(result)
         return answer, keyboard
@@ -212,7 +214,7 @@ async def handle_setting(message_text):
     pass
 
 
-async def handle_date_text(message_text, billing=None):
+async def handle_date_text(message_text, billing=None, city=None):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
 
     parts = re.split(r'[.,\-/ ]', message_text)
@@ -253,7 +255,7 @@ async def handle_date_text(message_text, billing=None):
         date_with_events = datetime(day=day, month=month, year=year)
 
         # Получаем события на указанную дату
-        result = await process.process_events(date_with_events)
+        result = await process.process_events(date_with_events, city=city)
         answer = await process.feed_answer(result, billing=billing)
         keyboard = await feed_more_keyboard(result)
         return answer, result.found, keyboard
@@ -263,12 +265,12 @@ async def handle_date_text(message_text, billing=None):
         return answer, False, await show_menu('events')
 
 
-async def handle_weekday_text(message_text, billing=None):
+async def handle_weekday_text(message_text, billing=None, city=None):
     daynow = datetime.now(timezone.utc) + timedelta(hours=3)
 
     weekday = WEEK_MENU[LANG].index(message_text.capitalize())
 
-    result = await process.process_weekday_events(weekday, daynow)
+    result = await process.process_weekday_events(weekday, daynow, city=city)
     answer = await process.feed_answer(result, billing=billing)
     keyboard = await feed_more_keyboard(result, 'weekday')
     return answer, keyboard
@@ -294,7 +296,12 @@ async def process_forwarded_admin_message(message: types.Message):
         message (types.Message): The forwarded message from admin
         """
     content = message.text or message.caption or ""
-        
+    if not content.strip():
+        # the API answers 400 to an empty content (a photo without a caption)
+        await message.reply("Нет текста — нечего разбирать, пост не отправлен.",
+                            reply_markup=await show_menu('events'))
+        return
+
     post_data = {
         "content": content,
         "message_id": message.message_id,
@@ -302,9 +309,14 @@ async def process_forwarded_admin_message(message: types.Message):
         "forward_date": message.forward_date.isoformat() if message.forward_date else None,
     }
 
-    await external_api.create_post_by_ai(post_data)
+    city = await city_service.get_user_city(message.from_user.id)
+    result = await external_api.create_post_by_ai(post_data, city=city)
 
-    await message.reply("Пост отправлен на обработку!", reply_markup=await show_menu('events'))
+    if 'error' in result:
+        answer = f"⚠️ Пост не принят: {result['error']}"
+    else:
+        answer = "Пост отправлен на обработку!"
+    await message.reply(answer, reply_markup=await show_menu('events'))
 
 
 async def handle_time_for_event(message, state):
