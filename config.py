@@ -1,0 +1,124 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TOKEN = os.getenv('token')
+URL = os.getenv('URL')
+ID_ADMIN = int(os.getenv('id_admin', 0))
+ID_CHANNEL = int(os.getenv('id_channel', 0))
+ID_DEV_CHANNEL = int(os.getenv('id_channel_dev', 0))
+CHANNEL_LINK = os.getenv('channel_url', '@DavaiSNami')
+BOT_LINK = os.getenv('bot_url', 'DavaiSNamiBot')
+
+TIMEZONE_HOUR = int(os.getenv('TIMEZONE', 3))
+
+DEFAULT_CITY = os.getenv('default_city', 'spb')
+CITY_NAMES = {
+    'spb': 'Санкт-Петербург',
+    'kzn': 'Казань',
+}
+
+DATABASE_URL = os.getenv('DATABASE_URL')
+LANG = os.getenv('language', 'ru')
+
+API_URL = os.getenv('API_URL')
+API_TOKEN = os.getenv('API_TOKEN')
+
+REMIND_OPTIONS = {1: 'за 1 ч', 5: 'за 5 ч', 24: 'за день'}
+DEFAULT_REMIND_HOURS = 5
+
+
+
+MENU = {
+    'events': {
+        'today':       'Сегодня',
+        'tomorrow':    'Завтра',
+        'weekend':     'Выходные',
+        'exhibitions': 'Выставки',
+        'categories':  'Категории',
+        'lucky':       'Мне повезёт',
+        'weekday':     'День Недели',
+        'settings':    'Настройки',
+    },
+    'weekday': {
+        'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср',  'Thr': 'Чт',
+        'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вск', 'events': '⬅ Назад'
+    },
+    'settings': {
+        'events':           'Мероприятия',
+        'city':             '🏙 Город',
+        'weekend_guide':    '🌅 Гайд на выходные',
+        'saved_events':     '⭐ Сохранённые Мероприятия',
+        #'reminders':       'Напоминания',
+        'balance':          '💎 Баланс',
+
+    },
+    'balance': {
+        'balance_add':      '💎 Пополнить Баланс',
+        'referral_url':     '⭐ Рефералка',
+        'settings':         '⬅ Назад'
+    },
+    'referral_url': {
+        'copy_referral':    '📋 Копировать ссылку',
+        'share_referral':   '📤 Поделиться',
+        'balance':          '⬅ Назад',
+    },
+    'back': {
+        'events':           'Вернуть меню назад'
+    },
+    'cancel_saved_events': {
+        'saved_events':         'Отменить'
+    }
+}
+
+ACTION_COST = {
+    'feed':            2,   # today / tomorrow / weekend / weekday / date / "more"
+    'exhibitions':     2,
+    'search_keyword':  2,
+    'search_semantic': 10,
+}
+
+STARS_RATE = 10
+TOPUP_STARS = 10          # invoice size in ⭐
+REFERRAL_BONUS = 100      # gems both sides get for a referral
+
+POPULAR_CATEGORIES = [
+    ('concert',    'Концерты',   '🎸'),
+    ('theater',    'Театр',      '🎭'),
+    ('exhibition', 'Выставки',   '🎨'),
+    ('party',      'Вечеринки',  '🎉'),
+    ('standup',    'Стендап',    '🎤'),
+    ('lecture',    'Лекции',     '📚'),
+]
+
+EXHIBITIONS_PHRASES = {
+    'two_week':     'Скоро заканчиваются',
+    'next_month':   'Заканчиваются в следующем месяце',
+    'others':       'Остальные'
+}
+
+
+WEEK_MENU = {
+    'ru': ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вск'],
+    'en': ['Mon', 'Tue', 'Wed', 'Thr', 'Fri', 'Sat', 'Sun']
+}
+
+MONTHES = {
+    'ru': ['января', "февраля", 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+    'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+}
+
+
+emoji_keyboard = {
+    # General events menu
+    'today':       '🔥',          'tomorrow':    '🦜',
+    'weekend':     '🏄‍♂️',        'exhibitions': '🎨',
+    'categories':  '🎭',          'lucky':       '🍀',
+    'weekday':     '🌍',
+    'settings':    '⚙️',          'events':      '🧩',
+
+    # Week day menu
+    'Mon': '😴',   'Tue': '📈',   'Wed': '🐪',   'Thr': '🚀',
+    'Fri': '🎉',   'Sat': '🥝',   'Sun': '☀️',
+}
