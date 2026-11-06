@@ -105,7 +105,9 @@ async def selection_picker(message: types.Message, user, selection_id: int):
                              reply_markup=keyboard)
     elif picker.status == 'empty':
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📱 Актуальные мероприятия", url=webapp_link())],
+            # the selection is over — the plain list of the user's city, no sel- section
+            [InlineKeyboardButton(text="📱 Актуальные мероприятия",
+                                  url=webapp_link(city=await city_service.get_user_city(user.telegram_id)))],
             *(await show_menu('events')).inline_keyboard,
         ])
         await message.answer("Все мероприятия из этого поста уже прошли.", reply_markup=keyboard)

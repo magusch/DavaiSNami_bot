@@ -855,7 +855,8 @@ async def process_selection_picker(selection_id, user_id):
     # a selection belongs to one city — the app should open that city's list
     city = events[0].get('city_id')
     return SelectionPicker(status='ok', text='\n'.join(lines), events=picker_events,
-                           saved_ids=saved_ids, webapp_url=webapp_link(city=city), city=city)
+                           saved_ids=saved_ids, webapp_url=webapp_link(city=city, selection=selection_id),
+                           city=city)
 
 
 async def process_saved_user_event(user_id=None, telegram_id=None, old=0):

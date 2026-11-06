@@ -14,6 +14,8 @@ BOT_LINK = os.getenv('bot_url', 'DavaiSNamiBot')
 TIMEZONE_HOUR = int(os.getenv('TIMEZONE', 3))
 
 DEFAULT_CITY = os.getenv('default_city', 'spb')
+WEBAPP_SELECTION_LINKS = os.getenv('webapp_selection_links', '0') == '1'
+
 CITY_NAMES = {
     'spb': 'Санкт-Петербург',
     'kzn': 'Казань',
