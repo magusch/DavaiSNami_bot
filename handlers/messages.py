@@ -15,6 +15,7 @@ import services.crud as crud
 import services.external_api as external_api
 import services.history as history_store
 import services.admin_relay as admin_relay
+import services.event_import as event_import
 from services import city as city_service
 from services.utils import send_chunked
 from handlers.billing import open_billing
@@ -68,13 +69,28 @@ async def handle_message(message: types.Message):
                                  disable_web_page_preview=True)
         elif message.from_user.id == ID_ADMIN:
             await process_forwarded_admin_message(message)
+        elif event_import.suggestion_urls(message):
+            await offer_suggestion(message)
         else:
             await message.answer(
-                "Это не похоже на мероприятие из нашего канала. "
-                "Чтобы сохранить событие, пересылайте пост из канала с мероприятиями.",
+                "Этот пост не получится прочитать: он не из публичного канала и в нём нет ссылок. "
+                "Чтобы сохранить событие, перешлите пост из нашего канала, а чтобы предложить "
+                "новое — пришлите ссылку на его страницу.",
                 reply_markup=await show_menu('events'),
             )
     else:
+        if message.from_user.id == ID_ADMIN and message_text:
+            # admin link → event import, not search
+            urls = event_import.extract_urls(message)
+            if urls:
+                city = await city_service.get_user_city(message.from_user.id)
+                await submit_admin_urls(message, urls, city,
+                                        comment=event_import.text_without_urls(message_text))
+                return
+        if event_import.has_link(message):
+            # links are suggestions, not search queries
+            await offer_suggestion(message)
+            return
         if not message_text:
             await admin_relay.relay_to_admin(message, "Нетекстовое сообщение в боте")
             await message.answer(
@@ -289,16 +305,19 @@ async def process_forwarded_event(message: types.Message):
 
 
 async def process_forwarded_admin_message(message: types.Message):
-    """
-    Process forwarded messages from admin and send to API service for post creation.
-    
-    Args:
-        message (types.Message): The forwarded message from admin
-        """
+    """One AI pass per post: short post with a link → page, else text; other links → buttons."""
     content = message.text or message.caption or ""
+    urls = event_import.extract_urls(message)
+    city = await city_service.get_user_city(message.from_user.id)
+
+    if event_import.is_short_announce(message, urls):
+        await submit_admin_urls(message, urls[:1], city, comment=event_import.text_without_urls(content),
+                                more_urls=urls[1:])
+        return
+
     if not content.strip():
         # the API answers 400 to an empty content (a photo without a caption)
-        await message.reply("Нет текста — нечего разбирать, пост не отправлен.",
+        await message.reply("Нет текста и ссылок — нечего разбирать, пост не отправлен.",
                             reply_markup=await show_menu('events'))
         return
 
@@ -308,15 +327,94 @@ async def process_forwarded_admin_message(message: types.Message):
         "forward_from": message.forward_from.id if message.forward_from else None,
         "forward_date": message.forward_date.isoformat() if message.forward_date else None,
     }
+    task_id, error = await event_import.submit_text(post_data, city)
+    if error:
+        await message.reply(f"⚠️ Пост не принят: {error}", reply_markup=await show_menu('events'))
+        return
 
+    header = "📝 Разбираю текст поста…"
+    status = await message.reply(header, reply_markup=event_import.links_keyboard(urls, city))
+    if task_id:
+        event_import.watch(status, task_id, "text", "📝 Текст поста")
+
+
+async def submit_admin_urls(message: types.Message, urls, city, comment=None, more_urls=()):
+    """One task and status message per URL."""
+    for i, url in enumerate(urls[:event_import.MAX_LINKS]):
+        task_id, error = await event_import.submit_url(url, message.from_user.id, city, comment)
+        if error:
+            await message.reply(f"⚠️ {url}\n{error}", disable_web_page_preview=True)
+            continue
+        keyboard = event_import.links_keyboard(list(more_urls), city) if i == 0 else None
+        shown = event_import.display_url(url)
+        status = await message.reply(f"🔗 Разбираю {shown}…", disable_web_page_preview=True,
+                                     reply_markup=keyboard)
+        if task_id:
+            event_import.watch(status, task_id, "url", f"🔗 {shown}")
+
+
+async def process_admin_url_callback(callback: types.CallbackQuery):
+    found = event_import.link_from_callback(callback.data)
+    if not found:
+        await callback.answer("Кнопка устарела — пришлите ссылку сообщением.", show_alert=True)
+        return
+    url, city = found
+    await callback.answer("Отправил на разбор")
+    task_id, error = await event_import.submit_url(url, callback.from_user.id, city)
+    if error:
+        await callback.message.answer(f"⚠️ {url}\n{error}", disable_web_page_preview=True)
+        return
+    shown = event_import.display_url(url)
+    status = await callback.message.answer(f"🔗 Разбираю {shown}…", disable_web_page_preview=True)
+    if task_id:
+        event_import.watch(status, task_id, "url", f"🔗 {shown}")
+
+
+async def offer_suggestion(message: types.Message):
+    """Offer a suggest button; quota is spent on click."""
+    urls = event_import.suggestion_urls(message)
+    if not urls:
+        await message.answer("По этой ссылке не прочитать мероприятие. Пришлите ссылку на страницу "
+                             "события или на пост публичного канала (t.me/канал/123).",
+                             reply_markup=await show_menu('events'))
+        return
+    left = event_import.user_quota_left(message.from_user.id)
+    if left <= 0:
+        await message.answer(f"Сегодня вы уже предложили {event_import.USER_DAILY_LIMIT} мероприятия — "
+                             "спасибо! Новые ссылки принимаем завтра.",
+                             reply_markup=await show_menu('events'))
+        return
     city = await city_service.get_user_city(message.from_user.id)
-    result = await external_api.create_post_by_ai(post_data, city=city)
+    await message.answer(
+        "Похоже на ссылку на мероприятие. Предложить его в афишу? "
+        f"Мы проверим страницу и отправим событие на модерацию (осталось на сегодня: {left}).",
+        reply_markup=event_import.suggest_keyboard(urls, city),
+        disable_web_page_preview=True,
+    )
 
-    if 'error' in result:
-        answer = f"⚠️ Пост не принят: {result['error']}"
-    else:
-        answer = "Пост отправлен на обработку!"
-    await message.reply(answer, reply_markup=await show_menu('events'))
+
+async def process_suggest_callback(callback: types.CallbackQuery):
+    found = event_import.link_from_callback(callback.data)
+    if not found:
+        await callback.answer("Кнопка устарела — пришлите ссылку ещё раз.", show_alert=True)
+        return
+    url, city = found
+    user_id = callback.from_user.id
+    if not event_import.take_user_quota(user_id):
+        await callback.answer("На сегодня лимит ссылок исчерпан, попробуйте завтра.", show_alert=True)
+        return
+    task_id, error = await event_import.submit_url(url, user_id, city)
+    if error or not task_id:
+        event_import.refund_user_quota(user_id)
+        logger.warning("Suggestion %s from %s not accepted: %s", url, user_id, error)
+        await callback.answer("Сервис сейчас недоступен, попробуйте позже.", show_alert=True)
+        return
+    await callback.answer("Проверяем страницу")
+    header = f"🔗 {event_import.display_url(url)}"
+    status = await callback.message.edit_text(f"{header}\n\nПроверяем страницу, это займёт до пары минут…",
+                                              disable_web_page_preview=True)
+    if isinstance(status, types.Message):
+        event_import.watch(status, task_id, "user", header)
 
 
 async def handle_time_for_event(message, state):

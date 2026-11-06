@@ -224,3 +224,44 @@ async def create_post_by_ai(event_data, city=None):
                 return await response.json()
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
         return {"error": f"API недоступен: {e!r}"}
+
+
+async def event_from_url(url, comment=None, submitted_by=None, city=None):
+    """POST ai/event-from-url/ → {task_id} or {'error'}."""
+
+    payload = _with_city({"url": url, "comment": comment, "submitted_by": submitted_by}, city)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(API_URL + 'ai/event-from-url/', headers=HEADERS, json=payload,
+                                    timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status != 200:
+                    body = (await response.text())[:300]
+                    return {"error": f"Ошибка API: {response.status} {body}".strip()}
+                return await response.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        return {"error": f"API недоступен: {e!r}"}
+
+
+async def wait_task(task_id, total=360, wait=25):
+    """Long-poll tasks/status until done or `total` seconds; → result or {'error'}."""
+
+    deadline = asyncio.get_running_loop().time() + total
+    while asyncio.get_running_loop().time() < deadline:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{API_URL}tasks/status/{task_id}", headers=HEADERS,
+                                       params={'wait': wait},
+                                       timeout=aiohttp.ClientTimeout(total=wait + 15)) as response:
+                    if response.status != 200:
+                        return {"error": f"Ошибка API: {response.status}"}
+                    data = await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            await asyncio.sleep(5)
+            continue
+
+        status = data.get("status")
+        if status == "success":
+            return data.get("result") or {}
+        if status in ("failure", "failed", "REVOKED"):
+            return {"error": data.get("error", "Задача не выполнена")}
+    return {"error": "Не дождались результата, итог придёт в dev-канал"}
