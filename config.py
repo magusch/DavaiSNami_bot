@@ -79,6 +79,7 @@ ACTION_COST = {
     'exhibitions':     2,
     'search_keyword':  2,
     'search_semantic': 10,
+    'suggest':          5,   # event suggestion by link
 }
 
 STARS_RATE = 10

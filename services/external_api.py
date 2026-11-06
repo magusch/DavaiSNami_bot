@@ -264,4 +264,4 @@ async def wait_task(task_id, total=360, wait=25):
             return data.get("result") or {}
         if status in ("failure", "failed", "REVOKED"):
             return {"error": data.get("error", "Задача не выполнена")}
-    return {"error": "Не дождались результата, итог придёт в dev-канал"}
+    return {"error": "Не дождались результата, итог придёт в dev-канал", "timeout": True}

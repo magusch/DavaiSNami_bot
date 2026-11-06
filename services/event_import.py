@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from aiogram import types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+import services.crud as crud
 import services.external_api as external_api
 from config import TIMEZONE_HOUR
 
@@ -144,11 +145,12 @@ def suggest_keyboard(urls, city):
     return links_keyboard(urls, city, prefix=SUGGEST_CALLBACK, label="➕ Предложить")
 
 
-def link_from_callback(data):
-    """'<prefix><key>:<i>' → (url, city), None if unknown (e.g. after restart)."""
+def link_from_callback(data, consume=False):
+    """'<prefix><key>:<i>' → (url, city), None if unknown (e.g. after restart).
+    consume=True makes the keyboard single-use (no double charge on a double tap)."""
     try:
         key, idx = data.split(":", 1)[1].split(":")
-        entry = _links[key]
+        entry = _links.pop(key) if consume else _links[key]
         return entry["urls"][int(idx)], entry["city"]
     except (KeyError, ValueError, IndexError):
         return None
@@ -198,23 +200,36 @@ async def submit_url(url, user_id, city, comment=None):
     return result.get("task_id"), result.get("error")
 
 
-def watch(status_message: types.Message, task_id, kind, header):
-    """Wait for the task in background and append the result to status_message."""
-    task = asyncio.create_task(_watch(status_message, task_id, kind, header))
+def watch(status_message: types.Message, task_id, kind, header, refund=None):
+    """Wait for the task in background and append the result to status_message.
+    refund=(telegram_id, gems): returned if the task failed for technical reasons."""
+    task = asyncio.create_task(_watch(status_message, task_id, kind, header, refund))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
 
 
-async def _watch(status_message, task_id, kind, header):
+async def _watch(status_message, task_id, kind, header, refund=None):
     result = await external_api.wait_task(task_id)
     formatter = {"url": format_url_result, "user": format_user_result}.get(kind, format_text_result)
     body = formatter(result)
+    if refund and refund[1] > 0 and is_technical_failure(result):
+        await crud.change_balance(refund[0], refund[1])
+        body += f"\n💎 {refund[1]} самоцветов вернули на баланс."
     try:
         await status_message.edit_text(f"{header}\n\n{body}"[:4000],
                                        reply_markup=status_message.reply_markup,
                                        disable_web_page_preview=True)
     except Exception:
         logger.exception("Failed to report import result for task %s", task_id)
+
+
+def is_technical_failure(result):
+    """Not the user's fault: page not fetched, task failed, API limit."""
+    if result.get("timeout"):
+        return False
+    if "error" in result and "status" not in result:
+        return True
+    return result.get("status") in ("failed", "rate_limited")
 
 
 def _event_line(e):

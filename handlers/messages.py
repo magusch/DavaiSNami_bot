@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 from config import (WEEK_MENU, MENU, MONTHES, LANG, ID_ADMIN, ID_CHANNEL,
-                    ACTION_COST, STARS_RATE)
+                    ACTION_COST, STARS_RATE, TOPUP_STARS, REFERRAL_BONUS)
 from keyboards import show_menu, feed_more_keyboard, exhibitions_more_keyboard, categories_menu
 
 from services import process
@@ -387,34 +387,63 @@ async def offer_suggestion(message: types.Message):
     city = await city_service.get_user_city(message.from_user.id)
     await message.answer(
         "Похоже на ссылку на мероприятие. Предложить его в афишу? "
-        f"Мы проверим страницу и отправим событие на модерацию (осталось на сегодня: {left}).",
+        "Мы проверим страницу и отправим событие на модерацию.\n"
+        f"Стоимость: {ACTION_COST['suggest']} 💎 (вернём, если страницу не получится открыть). "
+        f"Осталось на сегодня: {left}.",
         reply_markup=event_import.suggest_keyboard(urls, city),
         disable_web_page_preview=True,
     )
 
 
 async def process_suggest_callback(callback: types.CallbackQuery):
-    found = event_import.link_from_callback(callback.data)
+    found = event_import.link_from_callback(callback.data, consume=True)
     if not found:
         await callback.answer("Кнопка устарела — пришлите ссылку ещё раз.", show_alert=True)
         return
     url, city = found
     user_id = callback.from_user.id
-    if not event_import.take_user_quota(user_id):
+    if event_import.user_quota_left(user_id) <= 0:
         await callback.answer("На сегодня лимит ссылок исчерпан, попробуйте завтра.", show_alert=True)
         return
+
+    cost = ACTION_COST['suggest']
+    balance = await crud.get_balance(user_id)
+    if balance is None:
+        cost = 0                    # not in the DB yet: don't block, same as open_billing
+    else:
+        charged = await crud.charge_balance(user_id, cost)
+        if charged is None:
+            cost = 0                # can't pay: still submit the event, but don't show the result
+        else:
+            balance = charged
+    paid = cost > 0 or balance is None
+    event_import.take_user_quota(user_id)
+
     task_id, error = await event_import.submit_url(url, user_id, city)
     if error or not task_id:
         event_import.refund_user_quota(user_id)
+        if cost:
+            await crud.change_balance(user_id, cost)
         logger.warning("Suggestion %s from %s not accepted: %s", url, user_id, error)
-        await callback.answer("Сервис сейчас недоступен, попробуйте позже.", show_alert=True)
+        await callback.answer("Сервис сейчас недоступен, попробуйте позже. Самоцветы не списаны.",
+                              show_alert=True)
         return
-    await callback.answer("Проверяем страницу")
+    await callback.answer("Ссылка принята")
     header = f"🔗 {event_import.display_url(url)}"
-    status = await callback.message.edit_text(f"{header}\n\nПроверяем страницу, это займёт до пары минут…",
-                                              disable_web_page_preview=True)
+    if not paid:
+        await callback.message.edit_text(
+            f"{header}\n\nСпасибо, ссылку приняли — мы её проверим. "
+            f"Чтобы видеть результат проверки, нужно {ACTION_COST['suggest']} 💎, а у вас {balance}.\n"
+            f"Пополнить: {TOPUP_STARS} ⭐ → {TOPUP_STARS * STARS_RATE} 💎, "
+            f"или позовите друга по своей ссылке — по {REFERRAL_BONUS} 💎 обоим.",
+            disable_web_page_preview=True, reply_markup=await show_menu('balance'))
+        return
+    spent = f"Списано {cost} 💎, осталось {balance}. " if cost else ""
+    status = await callback.message.edit_text(
+        f"{header}\n\n{spent}Проверяем страницу, это займёт до пары минут…",
+        disable_web_page_preview=True)
     if isinstance(status, types.Message):
-        event_import.watch(status, task_id, "user", header)
+        event_import.watch(status, task_id, "user", header, refund=(user_id, cost))
 
 
 async def handle_time_for_event(message, state):

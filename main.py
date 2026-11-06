@@ -14,7 +14,7 @@ from aiogram.fsm.context import FSMContext
 import config
 from handlers import callbacks, commands, messages
 from keyboards import show_menu, FAV_LIST_CALLBACK
-from services import admin_relay
+from services import admin_relay, event_import
 from states import ReminderState
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,16 @@ async def command_text_handler(message: types.Message) -> None:
 @dp.callback_query(F.data.startswith("save_event:"))
 async def save_post_callback(callback: CallbackQuery):
     await callbacks.process_save_event(callback)
+
+
+@dp.callback_query(F.data.startswith(event_import.URL_CALLBACK), F.from_user.id == config.ID_ADMIN)
+async def admin_url_callback(callback: CallbackQuery):
+    await messages.process_admin_url_callback(callback)
+
+
+@dp.callback_query(F.data.startswith(event_import.SUGGEST_CALLBACK))
+async def suggest_callback(callback: CallbackQuery):
+    await messages.process_suggest_callback(callback)
 
 
 @dp.callback_query(F.data.startswith("save_all:"))
