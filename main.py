@@ -15,11 +15,13 @@ import config
 from handlers import callbacks, commands, messages
 from keyboards import show_menu, FAV_LIST_CALLBACK
 from services import admin_relay, event_import
+from services.client_context import ClientContextMiddleware
 from states import ReminderState
 
 logger = logging.getLogger(__name__)
 
 dp = Dispatcher()
+dp.update.outer_middleware(ClientContextMiddleware())
 
 def _is_undeliverable(exception: Exception) -> bool:
     """Чат нам недоступен — отвечать в него и дёргать админа бессмысленно."""

@@ -2,8 +2,12 @@ import asyncio
 import aiohttp
 
 from config import API_URL, API_TOKEN
+from services.client_context import header_value
 
-HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
+
+def _headers():
+    """Auth + X-Client-Context (who triggered the call) for the API request log."""
+    return {"Authorization": f"Bearer {API_TOKEN}", "X-Client-Context": header_value()}
 
 
 def _with_city(params, city):
@@ -24,7 +28,7 @@ async def fetch_events(params, endpoint='events/valid/', city=None):
         params = _with_city(params, city)
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL + endpoint, headers=HEADERS, json=params) as response:
+        async with session.post(API_URL + endpoint, headers=_headers(), json=params) as response:
             if response.status != 200:
                 return {"error": f"Ошибка API: {response.status}"}
 
@@ -48,7 +52,7 @@ async def fetch_exhibitions(city=None):
     events/valid/ category 11 instead."""
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL + 'tasks/get-exhibitions/', headers=HEADERS,
+        async with session.post(API_URL + 'tasks/get-exhibitions/', headers=_headers(),
                                 params=_with_city({}, city)) as response:
             if response.status != 200:
                 return {"error": f"Ошибка API: {response.status}"}
@@ -70,7 +74,7 @@ async def fetch_similar_events(event_id, limit=10, wait_embedding=True):
 
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{API_URL}events/{event_id}/similar",
-                               headers=HEADERS, params={'limit': limit}) as response:
+                               headers=_headers(), params={'limit': limit}) as response:
             if response.status == 200:
                 return await response.json()
             if response.status != 202:
@@ -95,7 +99,7 @@ async def fetch_selection(selection_id, limit=50):
 
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{API_URL}content-generator/selection/{selection_id}/",
-                               headers=HEADERS, params={'limit': limit}) as response:
+                               headers=_headers(), params={'limit': limit}) as response:
             if response.status == 404:
                 return {"not_found": True}
             if response.status != 200:
@@ -110,7 +114,7 @@ async def check_status(task_id: str):
 
     while retries < max_retries:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_URL}tasks/status/{task_id}", headers=HEADERS) as response:
+            async with session.get(f"{API_URL}tasks/status/{task_id}", headers=_headers()) as response:
                 if response.status != 200:
                     return {"error": f"Ошибка API: {response.status}"}
 
@@ -154,7 +158,7 @@ async def keyword_search(query, type='event', limit=10, city=None):
 
     params = _with_city({'query': query, 'type': type, 'limit': limit}, city)
     async with aiohttp.ClientSession() as session:
-        async with session.get(API_URL + 'search/', headers=HEADERS, params=params) as response:
+        async with session.get(API_URL + 'search/', headers=_headers(), params=params) as response:
             if response.status != 200:
                 return {"error": f"Ошибка API: {response.status}"}
             return await response.json()
@@ -173,7 +177,7 @@ async def semantic_search(message, history=None, limit=8, max_distance=None, cit
         "history": history or [],
     }, city)
     async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL + 'search/semantic/', headers=HEADERS, json=payload) as response:
+        async with session.post(API_URL + 'search/semantic/', headers=_headers(), json=payload) as response:
             if response.status not in (200, 202):
                 return {"error": f"Ошибка API: {response.status}"}
             data = await response.json()
@@ -190,7 +194,7 @@ async def poll_semantic_status(task_id: str, max_retries: int = 20, interval: fl
 
     for _ in range(max_retries):
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_URL}tasks/status/{task_id}", headers=HEADERS) as response:
+            async with session.get(f"{API_URL}tasks/status/{task_id}", headers=_headers()) as response:
                 if response.status != 200:
                     return {"error": f"Ошибка API: {response.status}"}
                 data = await response.json()
@@ -216,7 +220,7 @@ async def create_post_by_ai(event_data, city=None):
     event_data = _with_city(event_data, city)
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(API_URL + 'create_post_by_ai/', headers=HEADERS, json=event_data,
+            async with session.post(API_URL + 'create_post_by_ai/', headers=_headers(), json=event_data,
                                     timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status != 200:
                     body = (await response.text())[:300]
@@ -232,7 +236,7 @@ async def event_from_url(url, comment=None, submitted_by=None, city=None):
     payload = _with_city({"url": url, "comment": comment, "submitted_by": submitted_by}, city)
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(API_URL + 'ai/event-from-url/', headers=HEADERS, json=payload,
+            async with session.post(API_URL + 'ai/event-from-url/', headers=_headers(), json=payload,
                                     timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status != 200:
                     body = (await response.text())[:300]
@@ -249,7 +253,7 @@ async def wait_task(task_id, total=360, wait=25):
     while asyncio.get_running_loop().time() < deadline:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{API_URL}tasks/status/{task_id}", headers=HEADERS,
+                async with session.get(f"{API_URL}tasks/status/{task_id}", headers=_headers(),
                                        params={'wait': wait},
                                        timeout=aiohttp.ClientTimeout(total=wait + 15)) as response:
                     if response.status != 200:
